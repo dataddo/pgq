@@ -65,6 +65,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      # Get module dependencies
+      - name: mod download
+        run: go mod download
+
       # Runs Go tests
       - name: test
         run: go test ./...
