@@ -75,26 +75,26 @@ func TestAcquireMaxFromSemaphore(t *testing.T) {
 
 	w := semaphore.NewWeighted(size)
 
-	aquired, err := acquireMaxFromSemaphore(ctx, w, size)
+	acquired, err := acquireMaxFromSemaphore(ctx, w, size)
 	require.NoError(t, err)
-	require.Equal(t, size, aquired)
+	require.Equal(t, size, acquired)
 
 	const released1 int64 = 3
 	w.Release(released1)
-	aquired, err = acquireMaxFromSemaphore(ctx, w, size)
+	acquired, err = acquireMaxFromSemaphore(ctx, w, size)
 	require.NoError(t, err)
-	require.Equal(t, released1, aquired)
+	require.Equal(t, released1, acquired)
 
 	const released2 int64 = 1
 	go func() {
 		time.Sleep(time.Millisecond)
 		w.Release(released2)
 	}()
-	aquired, err = acquireMaxFromSemaphore(ctx, w, size)
+	acquired, err = acquireMaxFromSemaphore(ctx, w, size)
 	require.NoError(t, err)
-	require.Equal(t, released2, aquired)
+	require.Equal(t, released2, acquired)
 
-	aquired, err = acquireMaxFromSemaphore(ctx, w, size)
+	acquired, err = acquireMaxFromSemaphore(ctx, w, size)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, int64(0), aquired)
+	require.Equal(t, int64(0), acquired)
 }
