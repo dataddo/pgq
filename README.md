@@ -6,8 +6,9 @@
 PGQ is a Go package that provides a queue mechanism for your Go applications built on top of the postgres database. 
 It enables developers to implement efficient and reliable message queues for their microservices architecture using the familiar postgres infrastructure.
 
-PGQ internally uses the `UPDATE SET` postgres statement which creates the transactional lock for the records in the postgres table and enables the table to behave like the queue.
-It is intended to replace special message broker in environments where you already use postgres and you want clean, simple and straightforward communication among your services.
+PGQ internally uses the classic `UPDATE` + `SELECT ... FOR UPDATE` postgres statement which creates the transactional lock for the selected rows in the postgres table and enables the table to behave like the queue.
+The Select statement is using the `SKIP LOCKED` clause which enables the consumer to fetch the messages in the queue in the order they were created, and doesn't get stuck on the locked rows.
+It is intended to replace special message broker in environments where you already use postgres, and you want clean, simple and straightforward communication among your services.
 
 ## Features
 - Postgres-backed: Leverages the power of PostgreSQL to store and manage queues.
@@ -19,12 +20,12 @@ It is intended to replace special message broker in environments where you alrea
 ## Installation
 To install PGQ, use the go get command:
 ```
-go get https://github.com/dataddo/pgq
+go get go.dataddo.com/pgq@latest
 ```
 
 ## Usage
 ```
-import "github.com/dataddo/pgq"
+import "go.dataddo.com/pgq"
 
 // Create a new consumer/subscriber
 // To be added
