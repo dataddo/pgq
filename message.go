@@ -51,14 +51,14 @@ func (m *message) Metadata() Metadata { return m.metadata }
 // Payload returns payload of the message.
 func (m *message) Payload() json.RawMessage { return m.payload }
 
-// ErrMessageAlreadyFinished is error that is returned if message is being
+// errMessageAlreadyFinished is error that is returned if message is being
 // finished for second time. Example: when trying to ack after the nack has been already called.
-var ErrMessageAlreadyFinished = errors.New("message already finished")
+var errMessageAlreadyFinished = errors.New("message already finished")
 
 // ack positively acknowledges the message, and the message is marked as processed or removed from the queue
 // what happens to after ack depends on the CleanupStrategy.
 func (m *message) ack(ctx context.Context) error {
-	err := ErrMessageAlreadyFinished
+	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.ackFn(ctx)
 	})
@@ -68,7 +68,7 @@ func (m *message) ack(ctx context.Context) error {
 // nack does not the negative acknowledge of the message.
 // The message is returned to the queue after nack and may be processed again.
 func (m *message) nack(ctx context.Context, reason string) error {
-	err := ErrMessageAlreadyFinished
+	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.nackFn(ctx, reason)
 	})
@@ -77,7 +77,7 @@ func (m *message) nack(ctx context.Context, reason string) error {
 
 // discard removes the message from the queue completely
 func (m *message) discard(ctx context.Context, reason string) error {
-	err := ErrMessageAlreadyFinished
+	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.discardFn(ctx, reason)
 	})
