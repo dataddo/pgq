@@ -198,13 +198,7 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 }
 
 // NewConsumer creates Consumer with proper settings
-func NewConsumer(
-	db *sql.DB,
-	// Input queue is the name of the postgres table with required pgq schema.
-	queueName string,
-	handler MessageHandler,
-	opts ...ConsumerOption,
-) (*Consumer, error) {
+func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
 	for _, opt := range opts {
 		opt(&config)
