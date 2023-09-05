@@ -335,14 +335,14 @@ func (c *Consumer) verifyTable(ctx context.Context) error {
 func (c *Consumer) generateQuery() string {
 	var sb strings.Builder
 	sb.WriteString(`UPDATE `)
-	sb.WriteString(pgutils.QuoteIdentifier(c.queueName))
+	sb.WriteString(pg.QuoteIdentifier(c.queueName))
 	sb.WriteString(` SET locked_until = $1`)
 	sb.WriteString(`, started_at = CURRENT_TIMESTAMP`)
 	sb.WriteString(`, consumed_count = consumed_count+1`)
 	sb.WriteString(` WHERE id IN (`)
 	{
 		sb.WriteString(`SELECT id FROM `)
-		sb.WriteString(pgutils.QuoteIdentifier(c.queueName))
+		sb.WriteString(pg.QuoteIdentifier(c.queueName))
 		sb.WriteString(` WHERE`)
 		if c.cfg.HistoryLimit > 0 {
 			sb.WriteString(` created_at >= CURRENT_TIMESTAMP - $3::interval AND`)
@@ -628,7 +628,7 @@ type execer interface {
 }
 
 func (c *Consumer) ackMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context) error {
-	query := `UPDATE ` + pgutils.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP WHERE id = $1`
+	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP WHERE id = $1`
 	return func(ctx context.Context) error {
 		if _, err := exec.ExecContext(ctx, query, msgID); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
@@ -650,7 +650,7 @@ func (c *Consumer) ackMessage(exec execer, msgID pgtype.UUID) func(ctx context.C
 }
 
 func (c *Consumer) nackMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context, reason string) error {
-	query := `UPDATE ` + pgutils.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, error_detail = $2 WHERE id = $1`
+	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, error_detail = $2 WHERE id = $1`
 	return func(ctx context.Context, reason string) error {
 		if _, err := exec.ExecContext(ctx, query, msgID, reason); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
@@ -672,7 +672,7 @@ func (c *Consumer) nackMessage(exec execer, msgID pgtype.UUID) func(ctx context.
 }
 
 func (c *Consumer) discardMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context, reason string) error {
-	query := `UPDATE ` + pgutils.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP, error_detail = $2 WHERE id = $1`
+	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP, error_detail = $2 WHERE id = $1`
 	return func(ctx context.Context, reason string) error {
 		if _, err := exec.ExecContext(ctx, query, msgID, reason); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
