@@ -69,7 +69,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 
 	query := fmt.Sprintf(
 		`SELECT locked_until, consumed_count FROM %s WHERE id = $1`,
-		pgutils.QuoteIdentifier(queueName),
+		pg.QuoteIdentifier(queueName),
 	)
 	db = openDB(t)
 	t.Cleanup(func() {
