@@ -111,9 +111,9 @@ func (d *publisher) Publish(ctx context.Context, queue string, msgs ...Message) 
 func buildInsertQuery(queue string, msgCount int) string {
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO ")
-	sb.WriteString(pgutils.QuoteIdentifier(queue))
+	sb.WriteString(pg.QuoteIdentifier(queue))
 	sb.WriteString(" (payload, metadata) VALUES ")
-	var params pgutils.StmtParams
+	var params pg.StmtParams
 	for rowIdx := 0; rowIdx < msgCount; rowIdx++ {
 		if rowIdx != 0 {
 			sb.WriteString(",")

@@ -1,4 +1,4 @@
-package pgutils
+package pg
 
 import (
 	"strconv"
