@@ -65,16 +65,17 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      # Cache Go build cache and modcache
-      - name: cache deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}}-go-${{ matrix.go-version }}-postgres-${{ matrix.postgres-version }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ matrix.go-version }}-
+      # Disabled because of incompatibility with Matrix Strategy
+      #      # Cache Go build cache and modcache
+      #      - name: cache deps
+      #        uses: actions/cache@v3
+      #        with:
+      #          path: |
+      #            ~/.cache/go-build
+      #            ~/go/pkg/mod
+      #          key: ${{ runner.os }}}-go-${{ matrix.go-version }}-postgres-${{ matrix.postgres-version }}-${{ hashFiles('**/go.sum') }}
+      #          restore-keys: |
+      #            ${{ runner.os }}-go-${{ matrix.go-version }}-
 
       # Runs Go tests
       - name: test
