@@ -98,7 +98,21 @@ func openDB(t *testing.T) *sql.DB {
 		err := db.Close()
 		require.NoError(t, err)
 	})
+	ensureUUIDExtension(t, db)
 	return db
+}
+
+func ensureUUIDExtension(t *testing.T, db *sql.DB) {
+	_, err := db.Exec(`
+		DO $$ 
+		BEGIN
+		  IF current_setting('server_version_num')::int < 130000 THEN
+		    -- If PostgreSQL version is less than 13, enable pgcrypto
+		    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		  END IF;
+		END $$;
+	`)
+	require.NoError(t, err)
 }
 
 type slowHandler struct{}
