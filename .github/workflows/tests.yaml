@@ -19,6 +19,13 @@ jobs:
   # This workflow contains a single job called "test"
   test:
     name: test
+    strategy:
+      matrix:
+        # version must be string, otherwise it will be converted to float
+        # and the trailing zero will be removed. 1.20 -> 1.2
+        go-version: [ "1.21" ]
+        postgres-version: [ 16, 15, 14, 13, 12, 11 ]
+
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -30,7 +37,7 @@ jobs:
     services:
       # Start the postgres database
       postgres:
-        image: postgres:15
+        image: postgres:${{ matrix.postgres-version }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -54,7 +61,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: ${{ matrix.go-version }}
 
       # Cache Go build cache and modcache
       - name: cache deps
