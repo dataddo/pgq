@@ -3,6 +3,8 @@
 [![GoDoc](https://pkg.go.dev/badge/go.dataddo.com/pgq)](https://pkg.go.dev/go.dataddo.com/pgq)
 [![GoReportCard](https://goreportcard.com/badge/go.dataddo.com/pgq)](https://goreportcard.com/report/go.dataddo.com/pgq)
 
+<img src="logo.png" alt="pgsq logo" width="200" align="right" style="margin: 20px"/>
+
 PGQ is a Go package that provides a queue mechanism for your Go applications built on top of the postgres database. 
 It enables developers to implement efficient and reliable message queues for their microservices architecture using the familiar postgres infrastructure.
 
