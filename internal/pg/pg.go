@@ -26,8 +26,8 @@ func (p *StmtParams) Next() string {
 //	err := db.Exec(fmt.Sprintf("INSERT INTO %s VALUES ($1)", quoted), data)
 //
 // Any double quotes in name will be escaped.  The quoted identifier will be
-// case sensitive when used in a query.  If the input string contains a zero
-// byte, the result will be truncated immediately before it.
+// case-sensitive when used in a query. If the input string contains a zero byte,
+// the result will be truncated immediately before it.
 //
 // It's a copy of the function from github.com/lib/pq.
 func QuoteIdentifier(name string) string {
