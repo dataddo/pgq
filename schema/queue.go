@@ -1,4 +1,5 @@
-package pgq
+// Package schema is a place where to put general functions and constants relevant to the postgres table schema and pgq setup
+package schema
 
 import (
 	"fmt"
