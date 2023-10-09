@@ -1,4 +1,4 @@
-package sqlschema
+package pgq
 
 import (
 	"fmt"
@@ -6,14 +6,9 @@ import (
 	"go.dataddo.com/pgq/internal/pg"
 )
 
-// Queue is a schema for a queue table
-type Queue struct {
-	Name string
-}
-
-// CreateQuery returns a query for creating a queue table
-func (q *Queue) CreateQuery() string {
-	quotedTableName := pg.QuoteIdentifier(q.Name)
+// GenerateCreateTableQuery returns the query for creating the queue table
+func GenerateCreateTableQuery(queueName string) string {
+	quotedTableName := pg.QuoteIdentifier(queueName)
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %[1]s
 	(
 		id             UUID        DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
@@ -31,8 +26,8 @@ func (q *Queue) CreateQuery() string {
 	`, quotedTableName, quotedTableName[1:len(quotedTableName)-1])
 }
 
-// DropQuery returns a query for dropping a queue table
-func (q *Queue) DropQuery() string {
-	quotedTableName := pg.QuoteIdentifier(q.Name)
+// GenerateDropTableQuery returns a postgres query for dropping the queue table
+func GenerateDropTableQuery(queueName string) string {
+	quotedTableName := pg.QuoteIdentifier(queueName)
 	return `DROP TABLE IF EXISTS ` + quotedTableName
 }

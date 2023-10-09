@@ -16,7 +16,6 @@ import (
 	. "go.dataddo.com/pgq"
 	"go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
-	"go.dataddo.com/pgq/internal/sqlschema"
 )
 
 func TestConsumer_Run_graceful_shutdown(t *testing.T) {
@@ -27,12 +26,11 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 
 	db := openDB(t)
 	queueName := t.Name()
-	queueSchema := sqlschema.Queue{Name: queueName}
-	_, _ = db.ExecContext(ctx, queueSchema.DropQuery())
-	_, err := db.ExecContext(ctx, queueSchema.CreateQuery())
+	_, _ = db.ExecContext(ctx, GenerateDropTableQuery(queueName))
+	_, err := db.ExecContext(ctx, GenerateCreateTableQuery(queueName))
 	t.Cleanup(func() {
 		db := openDB(t)
-		_, err := db.ExecContext(ctx, queueSchema.DropQuery())
+		_, err := db.ExecContext(ctx, GenerateDropTableQuery(queueName))
 		require.NoError(t, err)
 		err = db.Close()
 		require.NoError(t, err)

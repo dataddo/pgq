@@ -23,6 +23,33 @@ To install PGQ, use the go get command:
 go get go.dataddo.com/pgq@latest
 ```
 
+## Setup
+In order to make pgq functional, there must exist the postgres table with all the fields the pgq requires.
+You can create the table query on your own, or you can use the query generator for that. 
+You usually run the create table command just once during the setup of your application.
+
+```go
+package main
+
+import (
+	"fmt"
+	"go.dataddo.com/pgq"
+)
+
+func main() {
+	queueName := "my_queue"
+
+	// create string contains the "CREATE TABLE my_queue ..." which you may use for table creation 
+	create := pgq.GenerateCreateTableQuery(queueName)
+	fmt.Println(create)
+
+	// drop string contains the "DROP TABLE my_queue ..." which you may use for cleaning hwn you no longer need the queue 
+	drop := pgq.GenerateCreateTableQuery(queueName)
+	fmt.Println(drop)
+}
+
+```
+
 ## Usage
 ```
 import "go.dataddo.com/pgq"
