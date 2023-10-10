@@ -33,18 +33,18 @@ package main
 
 import (
 	"fmt"
-	"go.dataddo.com/pgq"
+	"go.dataddo.com/pgq/x/schema"
 )
 
 func main() {
 	queueName := "my_queue"
 
 	// create string contains the "CREATE TABLE my_queue ..." which you may use for table creation 
-	create := pgq.GenerateCreateTableQuery(queueName)
+	create := schema.GenerateCreateTableQuery(queueName)
 	fmt.Println(create)
 
 	// drop string contains the "DROP TABLE my_queue ..." which you may use for cleaning hwn you no longer need the queue 
-	drop := pgq.GenerateCreateTableQuery(queueName)
+	drop := schema.GenerateCreateTableQuery(queueName)
 	fmt.Println(drop)
 }
 

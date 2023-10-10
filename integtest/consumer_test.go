@@ -16,7 +16,7 @@ import (
 	. "go.dataddo.com/pgq"
 	"go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
-	"go.dataddo.com/pgq/schema"
+	"go.dataddo.com/pgq/x/schema"
 )
 
 func TestConsumer_Run_graceful_shutdown(t *testing.T) {

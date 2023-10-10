@@ -11,7 +11,7 @@ import (
 	"go.dataddo.com/pgq"
 	pgutils "go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
-	"go.dataddo.com/pgq/schema"
+	"go.dataddo.com/pgq/x/schema"
 )
 
 func TestPublisher(t *testing.T) {
