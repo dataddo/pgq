@@ -11,7 +11,7 @@ import (
 	"go.dataddo.com/pgq"
 	pgutils "go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
-	"go.dataddo.com/pgq/internal/sqlschema"
+	"go.dataddo.com/pgq/x/schema"
 )
 
 func TestPublisher(t *testing.T) {
@@ -59,12 +59,11 @@ func TestPublisher(t *testing.T) {
 				require.NoError(t, err)
 			})
 			queueName := t.Name()
-			queueSchema := sqlschema.Queue{Name: queueName}
-			_, _ = db.ExecContext(ctx, queueSchema.DropQuery())
-			_, err := db.ExecContext(ctx, queueSchema.CreateQuery())
+			_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+			_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
 			require.NoError(t, err)
 			t.Cleanup(func() {
-				_, err := db.ExecContext(ctx, queueSchema.DropQuery())
+				_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
 				require.NoError(t, err)
 			})
 			d := pgq.NewPublisher(db, tt.publisherOpts...)
