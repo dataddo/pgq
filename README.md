@@ -1,23 +1,38 @@
-# PGQ - go queues using postgres
+# PGQ - go queues on top of postgres
 
 [![GoDoc](https://pkg.go.dev/badge/go.dataddo.com/pgq)](https://pkg.go.dev/go.dataddo.com/pgq)
 [![GoReportCard](https://goreportcard.com/badge/go.dataddo.com/pgq)](https://goreportcard.com/report/go.dataddo.com/pgq)
 
 <img src="logo.png" alt="pgsq logo" width="200" align="right" style="margin: 20px"/>
 
-PGQ is a Go package that provides a queue mechanism for your Go applications built on top of the postgres database. 
-It enables developers to implement efficient and reliable message queues for their microservices architecture using the familiar postgres infrastructure.
-
-PGQ internally uses the classic `UPDATE` + `SELECT ... FOR UPDATE` postgres statement which creates the transactional lock for the selected rows in the postgres table and enables the table to behave like the queue.
-The Select statement is using the `SKIP LOCKED` clause which enables the consumer to fetch the messages in the queue in the order they were created, and doesn't get stuck on the locked rows.
-It is intended to replace special message broker in environments where you already use postgres, and you want clean, simple and straightforward communication among your services.
+PGQ is a [Go](http://golang.org) package that provides a queuing mechanism for your Go applications built on top of the postgres database. 
+It enables developers to implement efficient and reliable, but simple message queues for their microservices architecture using the familiar postgres infrastructure.
 
 ## Features
-- Postgres-backed: Leverages the power of PostgreSQL to store and manage queues.
-- Reliable: Guarantees message persistence and delivery, even in the face of failures.
-- Efficient: Optimized for high throughput and low-latency message processing.
-- Transactional: Supports transactional message handling, ensuring consistency.
-- Simple API: Provides a clean and easy-to-use API for interacting with the queue.
+- __Postgres__-backed: Leverages the power of PostgreSQL to store and manage queues.
+- __Reliable__: Guarantees message persistence and delivery, even if facing the failures.
+- __Transactional__: Supports transactional message handling, ensuring consistency.
+- __Simple usage__: Provides a clean and easy-to-use API for interacting with the queue.
+- __Efficient__: Optimized for high throughput and low-latency message processing.
+
+## When to pick PGQ?
+
+Even though there are other great technologies and tools for complex messaging including the robust routing configuration, sometimes you do not need it, and you can be just fine with the simpler tooling.
+
+Pick pgq if you:
+- need to distribute the traffic fairly among your app replicas and int time to protect each of them from the overload
+- need the out-of-a-box observability
+- already use `postgres` and you don't want to complicate your tech stack
+- are ok with basic routing
+
+No need to bring the new technology to your existing stack when you can be pretty satisfied with `postgres`.
+Write the consumers and publishers in various languages with the simple idea behind - __use postgres table as a queue__.
+While using `pgq` you have a superb observability of the queue.  
+You can easily see the payloads of the messages waiting to be processed, but moreover payloads of both the currently being processed and already processed messages.
+You can get the processing results, duration and other statistics pretty simply.
+As the `pgq` queue table contains the records of already processed jobs too, you already have out of the box the historical statistics of all messages and can view it effortlessly by using simple SQL queries.
+
+Pgq is intended to replace the specialized message brokers in environments where you already use postgres, and you want clean, simple and straightforward communication among your services.
 
 ## Installation
 To install PGQ, use the go get command:
@@ -26,9 +41,10 @@ go get go.dataddo.com/pgq@latest
 ```
 
 ## Setup
-In order to make pgq functional, there must exist the postgres table with all the fields the pgq requires.
-You can create the table query on your own, or you can use the query generator for that. 
-You usually run the create table command just once during the setup of your application.
+Prerequisites:
+
+In order to make the `pgq` functional, there must exist the `postgres table` with all the necessary `pgq` fields.
+You can create the table on your own, or you can use the query generator. You usually run the `create table` command just once during the application setup.
 
 ```go
 package main
@@ -41,104 +57,292 @@ import (
 func main() {
 	queueName := "my_queue"
 
-	// create string contains the "CREATE TABLE my_queue ..." which you may use for table creation 
+	// create string contains the "CREATE TABLE my_queue ..." 
+	// which you may use for table creation.
+	// You may also use the "GenerateDropTableQuery" for dropping the table
 	create := schema.GenerateCreateTableQuery(queueName)
 	fmt.Println(create)
-
-	// drop string contains the "DROP TABLE my_queue ..." which you may use for cleaning hwn you no longer need the queue 
-	drop := schema.GenerateCreateTableQuery(queueName)
-	fmt.Println(drop)
 }
-
 ```
 
 ## Usage
+
+### Publishing the message
+
+```go
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"go.dataddo.com/pgq"
+	_ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func main() {
+	postgresDSN := "your_postgres_dsn"
+	queueName := "your_queue_name"
+
+	// create a new postgres connection 
+	db, err := sql.Open("pgx", postgresDSN)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	// create the publisher which may be reused for multiple messages
+	// you may pass the optional PublisherOptions when creating it
+	publisher := pgq.NewPublisher(db)
+
+	// publish the message to the queue
+	// provide the payload which is the JSON object
+	// and optional metadata which is the map[string]string
+	msg := pgq.NewMessage(nil, json.RawMessage(`{"foo":"bar"}`))
+	msgId, err := publisher.Publish(context.Background(), queueName, msg)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Println("Message published with ID:", msgId)
+}
 ```
-import "go.dataddo.com/pgq"
 
-// Create a new consumer/subscriber
-// To be added
+After the message is successfully published, you can see the new row with given `msgId` in the queue table.
 
-// Create a new publisher
-// To be added
+### Publisher options
 
-// Publish message
-// To be added
+Very often you want some metadata to be part of the message, so you can filter the messages in the queue table by it.
+Metadata can be any additional information you think is worth to be part of the message, but you do not want to be part of the payload.
+It can be the publisher app name/version, payload schema version, customer identifiers etc etc.
+
+You can simply attach the metadata to single message by:
+```go
+metadata := pgq.Metadata{
+	"publisherHost": "localhost",
+	"payloadVersion": "v1.0"
+}
 ```
 
-For more detailed usage examples and API documentation, please refer to the GoDoc page.
+or you can configure the `publisher` to attach the metadata to all messages it publishes:
+```go
+opts := []pgq.PublisherOption{
+	pgq.WithMetaInjectors(
+		pgq.StaticMetaInjector(
+			pgq.Metadata{
+				"publisherHost": "localhost",
+				"publisherVersion": "commitRSA"
+			}
+		),
+	),
+},
 
+publisher := pgq.NewPublisher(db, opts)
+metadata := pgq.Metadata{
+	"payloadVersion": "v1.0" // message specific meta field
+}
+```
+
+### Consuming the messages
+
+```go
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"go.dataddo.com/pgq"
+	_ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func main() {
+	postgresDSN := "your_postgres_dsn"
+	queueName := "your_queue_name"
+
+	// create a new postgres connection and publisher 
+	db, err := sql.Open("pgx", postgresDSN)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	// create the consumer which gets attached to handling function we defined above
+	h := &handler{}
+	consumer, err := pgq.NewConsumer(db, queueName, h)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	err = consumer.Run(context.Background())
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+// we must specify the message handler, which implements simple interface
+type handler struct {}
+func (h *handler) HandleMessage(_ context.Context, msg pgq.Message) (processed bool, err error) {
+	fmt.Println("Message payload:", string(msg.Payload()))
+	return true, nil
+}
+```
+
+### Consumer options
+
+You can configure the consumer by passing the optional `ConsumeOptions` when creating it.
+
+| Option     | Description                                                                                                                                                                                                                                                                             |
+|:-----------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| WithLogger | Provide your own `*slog.Logger` to have the pgq logs under control                                                                                                                                                                                                                      |
+| WithMaxParallelMessages         | Set how many consumers you want to run concurently in your app.                                                                                                                                                                                                                         |
+| WithLockDuration         | You can set your own locks effective duration according to your needs `time.Duration`. If you handle messages quickly, set the duration in seconds/minutes. If you play with long-duration jobs it makes sense to set this to bigger value than your longest job takes to be processed. |
+| WithPollingInterval         | Defines the frequency of asking postgres table for the new message `[time.Duration]`.                                                                                                                                                                                                   |
+| WithInvalidMessageCallback         | Handle the invalid messages which may appear in the queue. You may re-publish it to some junk queue etc.                                                                                                                                                                                |
+| WithHistoryLimit         | how far in the history you want to search for messages in the queue. Sometimes you want to ignore messages created days ago even though the are unprocessed.                                                                                                                            |
+| WithMetrics         | No problem to attach your own metrics provider (prometheus, ...) here.                                                                                                                                                                                                                  |
+
+```go
+consumer, err := NewConsumer(db, queueName, handler,
+		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithLockDuration(10 * time.Minute),
+		WithPollingInterval(2 * time.Second),
+		WithMaxParallelMessages(1),
+		WithMetrics(noop.Meter{}),
+	)
+```
+
+For more detailed usage examples and API documentation, please refer to the <a href="https://pkg.go.dev/go.dataddo.com/pgq" target="_blank">Dataddo pgq GoDoc page</a>.
 
 ## Message
 
-The message is the essential structure for communication between services using pgq. The message struct matches the postgres table. You can modify the table structure on your own by adding extra columns, but pgq depends on these mandatory fields"
-- `id`: The unique ID of the message in the db
-- `created_at`: The timestamp when the record in db was created (message received to the queue)
-- `payload`: Your custom message content in JSON format
-- `metadata`: Your optional custom metadata about the message in JSON format so your `payload` remains clean. This is the good place where to put information like the `publisher` app name, publish timestamp, payload schema version, customer related information etc.
-- `started_at`: Timestamp when the consumer started to process the message
-- `locked_until`: Timestamp stating until when the consumer wants to have the lock applied. If this field is set, no other consumer will process this message.
-- `processed_at`: Timestamp when the message was processed (either success or failure)
-- `error_detail`: The reason why the processing of the message failed provided by the consumer. Default `NULL` means no error.
-- `consumed_count`: The incremented integer keeping how many times the messages was tried to be consumed. Preventing the everlasting consumption of message which causes the OOM of consumers or other defects.
+The message is the essential structure for communication between services using `pgq`. 
+The message struct matches the postgres table schema. You can modify the table structure on your own by adding extra columns, but `pgq` depends on following mandatory fields only:
 
-## Handy queue sql queries
+| Field            | Description                                                                                                                                                                                                                                                                     |
+|:-----------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `id`             | The unique ID of the message in the db.                                                                                                                                                                                                                                         |
+| `payload`        | User's custom message content in JSON format.                                                                                                                                                                                                                                   |
+| `metadata`       | User's custom metadata about the message in JSON format so your `payload` remains cleansed from unnecessary data. This is the good place where to put information like the `publisher` app name, payload schema version, customer related information for easier debugging etc. |
+| `created_at`     | The timestamp when the record in db was created (message received to the queue).                                                                                                                                                                                                |
+| `started_at`     | Timestamp indicating when the consumer started to process the message.                                                                                                                                                                                                          |
+| `locked_until`   | Contains the consumer lock validity timestamp. If this field is set and has not expired yet, no other consumer can process the message.                                                                                                                                         |
+| `processed_at`   | Timestamp when the message was processed (either success or failure).                                                                                                                                                                                                           |
+| `error_detail`   | The reason why the processing of the message failed provided by the consumer. `NULL` means no error.                                                                                                                                                                            |
+| `consumed_count` | The integer incremented by consumer retries is preventing the consumption of the message which can cause infinite processing loops because of OOM errors etc.                                                                                                                   |
 
+## Handy pgq SQL queries
+
+### Queue size
+Get the messages waiting in the queue to be fetched by consumer.
+```sql
+select * from queue_name where processed_at is null and locked_until is null;
 ```
-// messages waiting in the queue to be fetched by consumer (good candidate for the queue length metric)
-select * from table_name where processed_at is null and locked_until is null;
-
-// messages being processed at the moment (good candidate for the messages WIP metric)
-select * from table_name where processed_at is null and locked_until is not null;
-
-// messages which failed when being processed
-select * from table_name where processed_at is not null and error_detail is not null;
-
-// messages created in last 1 day which have not been processed yet
-select * from table_name where processed_at is null and created_at > NOW() - INTERVAL '1 DAY';
-
-// messages causing unexpected failures of consumers (OOM ususally) 
-select * from table_name where consumed_count > 1;
-
-// top 10 slowest processed messages
-select id, processed_at - started_at as duration  from extractor_input where processed_at is not null and started_at is not null order by duration desc limit 10;
+Get the number of messages waiting in the queue. A good candidate for the queue length metric in your monitoring system.
+```sql
+select count(*) from queue_name where processed_at is null and locked_until is null;
 ```
+
+### Messages currently being processed
+Get the messages being processed at the moment.
+```sql
+select * from queue_name where processed_at is null and locked_until is null;
+```
+Get the number of messages currently being processed. Another good candidate for metric in your monitoring system.
+```sql
+select count(*) from queue_name where processed_at is null and locked_until is null;
+```
+
+_Tip: You can use the `pgq` table as a source for your monitoring system._
+<img src="docs/monitoring.png" alt="The queue length and messages being processed example in a Grafana panel populated by data from Prometheus fectehd from postgres queue table" />
+
+### Processed messages
+The messages which have already been successfully processed.
+```sql
+select * from queue_name where processed_at is not null and error_detail is null;
+```
+The messages which have already been processed, but ended with an error.
+```sql
+select * from queue_name where processed_at is not null and error_detail is not null;
+```
+
+### Other useful queries
+```sql
+-- messages created in last 1 day which have not been processed yet
+select * from queue_name where processed_at is null and created_at > NOW() - INTERVAL '1 DAY';
+
+-- messages causing unexpected failures of consumers (ususally OOM) 
+select * from queue_name where consumed_count > 1;
+
+-- top 10 slowest processed messages
+select id, queue_name - started_at as duration  from extractor_input where processed_at is not null and started_at is not null order by duration desc limit 10;
+```
+## Under the hood
+
+The pgq internally uses the classic `UPDATE` + `SELECT ... FOR UPDATE` postgres statement which creates the transactional lock for the selected rows in the postgres table and enables the table to behave like the queue.
+The Select statement is using the `SKIP LOCKED` <a href="https://www.postgresql.org/docs/current/sql-select.html" target="_blank">clause</a>
+which enables the consumer to fetch the messages in the queue in the order they were created, and doesn't get stuck on the locked rows.
 
 ## Optimizing performance
 
-In order to get the most out of your postgres, you should invest some time configuring pgq to optimize it's performance.
-- __create indices__ for the fields the pgq uses
-- use postgres __tables partitioning__ (pg_partman) to speed up queries
+When using the pgq in production environment you should focus on the following areas to improve the performance:
+### Queue table Indexes
+Having indexes on the fields which are used for sending is the essential key for the good performance.
+When postgres lacks the indexes, it can very negatively influence the performance of searching of the queue, which may lead to slowing down the whole database instance.
 
-## Use Cases for Queues in Microservice Architecture
-- Asynchronous Communication: Queues enable decoupled communication between microservices by allowing them to exchange messages asynchronously. This promotes scalability, fault tolerance, and flexibility in building distributed systems.
-- Event-Driven Architecture: Queues serve as a backbone for event-driven architectures, where events are produced by services and consumed by interested consumers. This pattern enables loose coupling and real-time processing of events, facilitating reactive and responsive systems.
-- Load Balancing: Queues can distribute the workload across multiple instances of a microservice. They ensure fair and efficient processing of tasks by allowing multiple workers to consume messages from the queue in a load-balanced manner.
-- Task Scheduling: Queues can be used for scheduling and executing background tasks or long-running processes asynchronously. This approach helps manage resource-intensive tasks without blocking the main execution flow.
+Each queue table should have at least the following indexes:
+```sql
+CREATE INDEX IDX_CREATED_AT ON my_queue_name (created_at);
+CREATE INDEX IDX_PROCESSED_AT_CONSUMED_COUNT ON my_queue_name (consumed_count, processed_at) WHERE (processed_at IS NULL);
+```
+These indexes are automatically part of the output query of the `GenerateCreateTableQuery` function.
+But if you create tables on your own, please make sure you have them. 
 
-## Other Queueing Tools for Microservice Architecture
-While PGQ offers a Postgres-based queueing solution, there are several other popular tools available for implementing message queues in microservice architectures:
+### Queue table partitioning
 
-__RabbitMQ__: A feature-rich, open-source message broker that supports multiple messaging patterns, such as publish/subscribe and request/reply. It provides robust message queuing, routing, and delivery guarantees.
+Usually you do not need to keep the full history of the queue table in the database for months back.
+You may delete such rows with the `DELETE` command in some cron jobs, but do not forget that DELETE is a very expensive operation in postgres,
+and it may affect insertions and updates in the table.
 
-__Kafka__: A distributed streaming platform that is highly scalable and fault-tolerant. Kafka is designed for handling high-throughput, real-time data streams and provides strong durability and fault tolerance guarantees.
+The better solution is to use the __postgres table partitioning__.
+The easiest way how to set up the partitioning is to use the `pg_partman` postgres extension.
 
-__Amazon Simple Queue Service (SQS)__: A fully managed message queuing service provided by AWS. SQS offers reliable and scalable queues with automatic scaling, high availability, and durability.
+If the query returns 0, you need to install the extension first, otherwise you're ready to partition.
+```sql
+SELECT count(name) FROM pg_available_extensions where name = 'pg_partman';
+```
 
-__Google Cloud Pub/Sub__: A messaging service from Google Cloud that provides scalable and reliable message queuing and delivery. It offers features like event-driven processing, push and pull subscriptions, and topic-based messaging.
+1. we create the `template table` to be used for creation of new partitions:
 
-__Microsoft Azure Service Bus__: A cloud-based messaging service on Microsoft Azure that enables reliable communication between services and applications. It supports various messaging patterns and provides advanced features like message sessions and dead-lettering.
+The template table must have exactly the same structure as the original queue, and it has the `_template` name suffix.
+It must also contain the indexes so the partition derived tables have it too.
+```sql
+CREATE TABLE my_queue_name_template (id UUID NOT NULL DEFAULT gen_random_uuid(), created_at TIMESTAMP(0) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL, payload JSONB DEFAULT NULL, metadata JSONB DEFAULT NULL, locked_until TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, processed_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, error_detail TEXT DEFAULT NULL, started_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, consumed_count INT DEFAULT 0 NOT NULL, PRIMARY KEY(id, created_at));
+CREATE INDEX IDX_CREATED_AT_TPL ON my_queue_name_template (created_at);
+CREATE INDEX IDX_PROCESED_AT_TPL ON my_queue_name_template (consumed_count, processed_at) WHERE (processed_at IS NULL);
+```
 
-Choose a queueing tool based on your specific requirements, such as scalability, fault tolerance, delivery guarantees, integration capabilities, and cloud provider preferences.
+2. we create the partitioned table with the same structure as the template table, but with the partitioning key:
+```sql
+-- DROP the table if it already exists
+DROP table IF EXISTS my_queue_name;
+-- and let it be created like partman does it. This is the default queue to be used when no partitioned one is matched
+CREATE TABLE IF NOT EXISTS my_queue_name
+(LIKE my_queue_name_template INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING COMMENTS) PARTITION BY RANGE (created_at);
+```
+3. we instruct partman to create the partitions every day automatically:
+```sql
+SELECT partman.create_parent('my_queue_name', 'created_at', 'native', 'daily', p_template_table := 'my_queue_name_template';
+```
 
-## When to pick PGQ?
-
-Even though the technologies listed above are great for complex messaging including the robust routing configuration, sometimes you do not need it for your simple use cases.
-
-If you need just the basic routing, distribute the payload fairly to protect your services from overloading and want to use technology which is already in your tech stack (postgres), the __pgq__ is the right choice. No need to bring the new technology to your stack when you can be satisfied with postgres.
-
-Write consumers and publishers in various languages with the simple idea behind - use postgre table as a queue.
-
-While using pgq you have a superb observability of what is going on in the queue. You can easily see the messages and their content which are currently being processed. You can see how long the processing takes, if it succeeded or and why it failed. As the queue remebers the already processed jobs too, you have out of the box the historical statistics and can view it effortlessly by using regular SQL queries.
-
-
+4. we configure partman how to rotate the tables setting the 14 days retention period:
+```sql
+UPDATE partman.part_config
+SET infinite_time_partitions = true,
+    retention = '14 days',
+    retention_keep_table = false,
+    retention_keep_index = false
+WHERE parent_table = 'my_queue_name';
+```
