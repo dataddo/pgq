@@ -94,7 +94,7 @@ type consumerConfig struct {
 	HistoryLimit time.Duration
 	// MaxConsumeCount is the maximal number of times a message can be consumed before it is ignored.
 	// This is a safety mechanism to prevent infinite loops when a message causes OOM errors
-	MaxConsumeCount int
+	MaxConsumeCount uint
 
 	Logger *slog.Logger
 }
@@ -196,12 +196,8 @@ func WithHistoryLimit(d time.Duration) ConsumerOption {
 // When message causes OOM it could lead to infinite loop in the consumers.
 // Setting this to value greater than 0 will prevent this.
 // Setting this to value 0 will disable this safe mechanism.
-func WithMaxConsumeCount(max int) ConsumerOption {
+func WithMaxConsumeCount(max uint) ConsumerOption {
 	return func(c *consumerConfig) {
-		if max < 0 {
-			max = 0
-		}
-
 		c.MaxConsumeCount = max
 	}
 }
@@ -367,7 +363,7 @@ func (c *Consumer) generateQuery() string {
 		sb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
 		if c.cfg.MaxConsumeCount > 0 {
 			sb.WriteString(` AND consumed_count < `)
-			sb.WriteString(strconv.Itoa(c.cfg.MaxConsumeCount))
+			sb.WriteString(strconv.FormatUint(uint64(c.cfg.MaxConsumeCount), 10))
 		}
 		sb.WriteString(` AND processed_at IS NULL`)
 		sb.WriteString(` ORDER BY consumed_count ASC, created_at ASC`)
