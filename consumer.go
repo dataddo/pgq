@@ -29,8 +29,6 @@ import (
 	"go.dataddo.com/pgq/internal/pg"
 )
 
-const maxConsumedCount = 3
-
 type fatalError struct {
 	Err error
 }
@@ -94,6 +92,9 @@ type consumerConfig struct {
 	// If not set, it will look for message in the whole table.
 	// You may set this value when using partitioned table to search just in partitions you are interested in
 	HistoryLimit time.Duration
+	// MaxConsumeCount is the maximal number of times a message can be consumed before it is ignored.
+	// This is a safety mechanism to prevent infinite loops when a message causes OOM errors
+	MaxConsumeCount int
 
 	Logger *slog.Logger
 }
@@ -107,6 +108,7 @@ var defaultConsumerConfig = consumerConfig{
 	MaxParallelMessages:    1,
 	InvalidMessageCallback: func(context.Context, InvalidMessage, error) {},
 	Metrics:                noop.Meter{},
+	MaxConsumeCount:        3,
 	Logger:                 noopLogger,
 }
 
@@ -187,6 +189,20 @@ func WithInvalidMessageCallback(fn InvalidMessageCallback) ConsumerOption {
 func WithHistoryLimit(d time.Duration) ConsumerOption {
 	return func(c *consumerConfig) {
 		c.HistoryLimit = d
+	}
+}
+
+// WithMaxConsumeCount sets the maximal number of times a message can be consumed before it is ignored.
+// When message causes OOM it could lead to infinite loop in the consumers.
+// Setting this to value greater than 0 will prevent this.
+// Setting this to value 0 will disable this safe mechanism.
+func WithMaxConsumeCount(max int) ConsumerOption {
+	return func(c *consumerConfig) {
+		if max < 0 {
+			max = 0
+		}
+
+		c.MaxConsumeCount = max
 	}
 }
 
@@ -349,8 +365,10 @@ func (c *Consumer) generateQuery() string {
 			sb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
 		sb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
-		sb.WriteString(` AND consumed_count < `)
-		sb.WriteString(strconv.Itoa(maxConsumedCount))
+		if c.cfg.MaxConsumeCount > 0 {
+			sb.WriteString(` AND consumed_count < `)
+			sb.WriteString(strconv.Itoa(c.cfg.MaxConsumeCount))
+		}
 		sb.WriteString(` AND processed_at IS NULL`)
 		sb.WriteString(` ORDER BY consumed_count ASC, created_at ASC`)
 		sb.WriteString(` LIMIT $2`)
