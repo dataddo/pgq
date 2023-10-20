@@ -93,7 +93,7 @@ type consumerConfig struct {
 	// You may set this value when using partitioned table to search just in partitions you are interested in
 	HistoryLimit time.Duration
 	// MaxConsumeCount is the maximal number of times a message can be consumed before it is ignored.
-	// This is a safety mechanism to prevent infinite loops when a message causes OOM errors
+	// This is a safety mechanism to prevent failure infinite loops when a message causes unhandled panic, OOM etc.
 	MaxConsumeCount uint
 
 	Logger *slog.Logger
@@ -193,9 +193,9 @@ func WithHistoryLimit(d time.Duration) ConsumerOption {
 }
 
 // WithMaxConsumeCount sets the maximal number of times a message can be consumed before it is ignored.
-// When message causes OOM it could lead to infinite loop in the consumers.
-// Setting this to value greater than 0 will prevent this.
-// Setting this to value 0 will disable this safe mechanism.
+// Unhandled SIGKILL or uncaught panic, OOM error etc. could lead to consumer failure infinite loop.
+// Setting this value to greater than 0 will prevent happening this loop.
+// Setting this to value 0 disableS this safe mechanism.
 func WithMaxConsumeCount(max uint) ConsumerOption {
 	return func(c *consumerConfig) {
 		c.MaxConsumeCount = max
