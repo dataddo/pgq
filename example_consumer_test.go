@@ -15,7 +15,7 @@ import (
 
 type Handler struct{}
 
-func (h *Handler) HandleMessage(ctx context.Context, msg pgq.Message) (res bool, err error) {
+func (h *Handler) HandleMessage(ctx context.Context, msg *pgq.MessageIncoming) (res bool, err error) {
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -30,7 +30,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg pgq.Message) (res bool,
 			err = fmt.Errorf("%v", r)
 		}
 	}()
-	if msg.Metadata()["heaviness"] == "heavy" {
+	if msg.Metadata["heaviness"] == "heavy" {
 		// nack the message, it will be retried
 		// Message won't contain error detail in the database.
 		return pgq.MessageNotProcessed, nil
@@ -38,7 +38,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg pgq.Message) (res bool,
 	var myPayload struct {
 		Foo string `json:"foo"`
 	}
-	if err := json.Unmarshal(msg.Payload(), &myPayload); err != nil {
+	if err := json.Unmarshal(msg.Payload, &myPayload); err != nil {
 		// discard the message, it will not be retried
 		// Message will contain error detail in the database.
 		return pgq.MessageProcessed, fmt.Errorf("invalid payload: %v", err)

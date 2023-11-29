@@ -62,14 +62,14 @@ const (
 //	// | true      | <nil>      | processed, no error.                                 |
 //	// | true      | some error | processed, ended with error. Don't retry!            |
 type MessageHandler interface {
-	HandleMessage(context.Context, Message) (processed bool, err error)
+	HandleMessage(context.Context, *MessageIncoming) (processed bool, err error)
 }
 
 // MessageHandlerFunc is MessageHandler implementation by simple function.
-type MessageHandlerFunc func(context.Context, Message) (processed bool, err error)
+type MessageHandlerFunc func(context.Context, *MessageIncoming) (processed bool, err error)
 
 // HandleMessage calls self. It also implements MessageHandler interface.
-func (fn MessageHandlerFunc) HandleMessage(ctx context.Context, msg Message) (processed bool, err error) {
+func (fn MessageHandlerFunc) HandleMessage(ctx context.Context, msg *MessageIncoming) (processed bool, err error) {
 	return fn(ctx, msg)
 }
 
@@ -280,7 +280,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 		wg.Add(len(msgs))
 		for _, msg := range msgs {
-			go func(msg *message) {
+			go func(msg *MessageIncoming) {
 				defer wg.Done()
 				defer c.sem.Release(1)
 				c.handleMessage(ctx, msg)
@@ -370,11 +370,11 @@ func (c *Consumer) generateQuery() string {
 		sb.WriteString(` LIMIT $2`)
 		sb.WriteString(` FOR UPDATE SKIP LOCKED`)
 	}
-	sb.WriteString(`) RETURNING id, payload, metadata`)
+	sb.WriteString(`) RETURNING id, payload, metadata, consumed_count`)
 	return sb.String()
 }
 
-func (c *Consumer) handleMessage(ctx context.Context, msg *message) {
+func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.LockDuration)
 	defer cancel()
 
@@ -382,7 +382,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg *message) {
 	defer cancel()
 	// TODO configurable Propagator
 	propagator := otel.GetTextMapPropagator()
-	carrier := propagation.MapCarrier(msg.metadata)
+	carrier := propagation.MapCarrier(msg.Metadata)
 	ctx = propagator.Extract(ctx, carrier)
 
 	ctx, span := otel.Tracer("pgq").Start(ctx, "HandleMessage")
@@ -405,7 +405,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg *message) {
 				"error", err.Error(),
 				"ackTimeout", c.cfg.AckTimeout,
 				"reason", reason,
-				"msg.metadata", msg.metadata,
+				"msg.metadata", msg.Metadata,
 			)
 		}
 		return
@@ -419,7 +419,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg *message) {
 				"error", err,
 				"ackTimeout", c.cfg.AckTimeout,
 				"reason", discardReason,
-				"msg.metadata", msg.metadata,
+				"msg.metadata", msg.Metadata,
 			)
 		}
 		return
@@ -429,7 +429,7 @@ func (c *Consumer) handleMessage(ctx context.Context, msg *message) {
 		c.cfg.Logger.ErrorContext(ctx, "pgq: ack failed",
 			"error", err,
 			"ackTimeout", c.cfg.AckTimeout,
-			"msg.metadata", msg.metadata,
+			"msg.metadata", msg.Metadata,
 		)
 	}
 }
@@ -444,7 +444,7 @@ func prepareCtxTimeout() (func(td time.Duration) context.Context, context.Cancel
 	return fn, cancel
 }
 
-func (c *Consumer) consumeMessages(ctx context.Context, query string) ([]*message, error) {
+func (c *Consumer) consumeMessages(ctx context.Context, query string) ([]*MessageIncoming, error) {
 	for {
 		maxMsg, err := acquireMaxFromSemaphore(ctx, c.sem, int64(c.cfg.MaxParallelMessages))
 		if err != nil {
@@ -473,9 +473,10 @@ type pgMessage struct {
 	ID       pgtype.UUID
 	Payload  pgtype.JSONB
 	Metadata pgtype.JSONB
+	Attempt  pgtype.Int4
 }
 
-func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit int64) (_ []*message, err error) {
+func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit int64) (_ []*MessageIncoming, err error) {
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		// TODO not necessary fatal, network could wiggle.
@@ -509,7 +510,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit i
 	}
 	defer rows.Close()
 
-	var msgs []*message
+	var msgs []*MessageIncoming
 	for rows.Next() {
 		msg, err := c.parseRow(ctx, rows)
 		if err != nil {
@@ -529,12 +530,13 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit i
 	return msgs, nil
 }
 
-func (c *Consumer) parseRow(ctx context.Context, rows *sql.Rows) (*message, error) {
+func (c *Consumer) parseRow(ctx context.Context, rows *sql.Rows) (*MessageIncoming, error) {
 	var pgMsg pgMessage
 	if err := rows.Scan(
 		&pgMsg.ID,
 		&pgMsg.Payload,
 		&pgMsg.Metadata,
+		&pgMsg.Attempt,
 	); err != nil {
 		if isErrorCode(err, undefinedTableErrCode, undefinedColumnErrCode) {
 			return nil, fatalError{Err: err}
@@ -584,8 +586,8 @@ func (c *Consumer) discardInvalidMsg(ctx context.Context, id pgtype.UUID, err er
 	}
 }
 
-func (c *Consumer) finishParsing(pgMsg pgMessage) (*message, error) {
-	msg := &message{
+func (c *Consumer) finishParsing(pgMsg pgMessage) (*MessageIncoming, error) {
+	msg := &MessageIncoming{
 		id:        uuid.UUID(pgMsg.ID.Bytes),
 		once:      sync.Once{},
 		ackFn:     c.ackMessage(c.db, pgMsg.ID),
@@ -593,14 +595,16 @@ func (c *Consumer) finishParsing(pgMsg pgMessage) (*message, error) {
 		discardFn: c.discardMessage(c.db, pgMsg.ID),
 	}
 	var err error
-	msg.payload, err = parsePayload(pgMsg)
+	msg.Payload, err = parsePayload(pgMsg)
 	if err != nil {
 		return msg, errors.Wrap(err, "parsing payload")
 	}
-	msg.metadata, err = parseMetadata(pgMsg)
+	msg.Metadata, err = parseMetadata(pgMsg)
 	if err != nil {
 		return msg, errors.Wrap(err, "parsing metadata")
 	}
+	msg.Attempt = int(pgMsg.Attempt.Int)
+	msg.maxConsumedCount = c.cfg.MaxConsumeCount
 	return msg, nil
 }
 

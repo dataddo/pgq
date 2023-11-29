@@ -26,19 +26,19 @@ func TestPublisher(t *testing.T) {
 	}
 	tests := []struct {
 		name          string
-		msg           pgq.Message
+		msg           *pgq.MessageOutgoing
 		publisherOpts []pgq.PublisherOption
 		want          want
 		wantErr       bool
 	}{
 		{
 			name: "Select extra columns",
-			msg: pgq.NewMessage(
-				pgq.Metadata{
+			msg: &pgq.MessageOutgoing{
+				Metadata: pgq.Metadata{
 					"test": "test_value",
 				},
-				json.RawMessage(`{"foo":"bar"}`),
-			),
+				Payload: json.RawMessage(`{"foo":"bar"}`),
+			},
 			publisherOpts: []pgq.PublisherOption{
 				pgq.WithMetaInjectors(
 					pgq.StaticMetaInjector(pgq.Metadata{"host": "localhost"}),
