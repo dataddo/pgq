@@ -21,7 +21,7 @@ type publisher struct {
 
 // Publisher publishes messages to Postgres queue.
 type Publisher interface {
-	Publish(ctx context.Context, queue string, msg ...Message) ([]uuid.UUID, error)
+	Publish(ctx context.Context, queue string, msg ...*MessageOutgoing) ([]uuid.UUID, error)
 }
 
 type publisherConfig struct {
@@ -34,14 +34,14 @@ type publisherConfig struct {
 // default values are used.
 type PublisherOption func(*publisherConfig)
 
-// WithMetaInjectors adds metadata injectors to the publisher. Injectors are run in the order they are given.
+// WithMetaInjectors adds Metadata injectors to the publisher. Injectors are run in the order they are given.
 func WithMetaInjectors(injectors ...func(context.Context, Metadata)) PublisherOption {
 	return func(c *publisherConfig) {
 		c.metaInjectors = append(c.metaInjectors, injectors...)
 	}
 }
 
-// StaticMetaInjector returns a metadata injector that injects given metadata.
+// StaticMetaInjector returns a Metadata injector that injects given Metadata.
 func StaticMetaInjector(m Metadata) func(context.Context, Metadata) {
 	staticMetadata := maps.Clone(m)
 	return func(_ context.Context, metadata Metadata) {
@@ -59,7 +59,7 @@ func NewPublisher(db *sql.DB, opts ...PublisherOption) Publisher {
 }
 
 // Publish publishes the message.
-func (d *publisher) Publish(ctx context.Context, queue string, msgs ...Message) (ids []uuid.UUID, err error) {
+func (d *publisher) Publish(ctx context.Context, queue string, msgs ...*MessageOutgoing) (ids []uuid.UUID, err error) {
 	if len(msgs) < 1 {
 		return []uuid.UUID{}, nil
 	}
@@ -128,13 +128,13 @@ func buildInsertQuery(queue string, msgCount int) string {
 	return sb.String()
 }
 
-func (d *publisher) buildArgs(ctx context.Context, msgs []Message) []any {
+func (d *publisher) buildArgs(ctx context.Context, msgs []*MessageOutgoing) []any {
 	args := make([]any, 0, len(msgs)*2)
 	for _, msg := range msgs {
 		for _, injector := range d.cfg.metaInjectors {
-			injector(ctx, msg.Metadata())
+			injector(ctx, msg.Metadata)
 		}
-		args = append(args, msg.Payload(), msg.Metadata())
+		args = append(args, msg.Payload, msg.Metadata)
 	}
 	return args
 }

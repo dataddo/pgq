@@ -24,19 +24,19 @@ func ExamplePublisher() {
 	p := pgq.NewPublisher(db)
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	payload, _ := json.Marshal(PayloadStruct{Foo: "bar"})
-	messages := []pgq.Message{
-		pgq.NewMessage(
-			pgq.Metadata{
+	messages := []*pgq.MessageOutgoing{
+		{
+			Metadata: pgq.Metadata{
 				"version": "1.0",
 			},
-			json.RawMessage(payload),
-		),
-		pgq.NewMessage(
-			pgq.Metadata{
+			Payload: json.RawMessage(payload),
+		},
+		{
+			Metadata: pgq.Metadata{
 				"version": "1.0",
 			},
-			json.RawMessage(payload),
-		),
+			Payload: json.RawMessage(payload),
+		},
 	}
 	ids, err := p.Publish(ctx, queueName, messages...)
 	if err != nil {

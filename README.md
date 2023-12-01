@@ -101,8 +101,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"go.dataddo.com/pgq"
+
 	_ "github.com/jackc/pgx/v4/stdlib"
+
+	"go.dataddo.com/pgq"
 )
 
 func main() {
@@ -123,7 +125,9 @@ func main() {
 	// publish the message to the queue
 	// provide the payload which is the JSON object
 	// and optional metadata which is the map[string]string
-	msg := pgq.NewMessage(nil, json.RawMessage(`{"foo":"bar"}`))
+	msg := &pgq.MessageOutgoing{
+		Payload: json.RawMessage(`{"foo":"bar"}`),
+	}
 	msgId, err := publisher.Publish(context.Background(), queueName, msg)
 	if err != nil {
 		panic(err.Error())
@@ -131,6 +135,7 @@ func main() {
 
 	fmt.Println("Message published with ID:", msgId)
 }
+
 ```
 
 After the message is successfully published, you can see the new row with given `msgId` in the queue table.
@@ -208,9 +213,9 @@ func main() {
 
 // we must specify the message handler, which implements simple interface
 type handler struct {}
-func (h *handler) HandleMessage(_ context.Context, msg pgq.Message) (processed bool, err error) {
-	fmt.Println("Message payload:", string(msg.Payload()))
-	return true, nil    
+func (h *handler) HandleMessage(_ context.Context, msg *pgq.MessageIncoming) (processed bool, err error) {
+	fmt.Println("Message payload:", string(msg.Payload))
+	return true, nil
 }
 ```
 

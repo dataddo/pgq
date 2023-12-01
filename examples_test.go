@@ -19,12 +19,13 @@ func ExampleNewConsumer() {
 		pgq.WithLockDuration(10*time.Minute),
 		pgq.WithPollingInterval(500*time.Millisecond),
 		pgq.WithAckTimeout(5*time.Second),
+		pgq.WithMessageProcessingReserveDuration(5*time.Second),
 		pgq.WithMaxParallelMessages(42),
 		pgq.WithMetrics(noop.Meter{}),
 		pgq.WithHistoryLimit(24*time.Hour),
 		pgq.WithLogger(slogger),
 		pgq.WithInvalidMessageCallback(func(ctx context.Context, msg pgq.InvalidMessage, err error) {
-			// message payload and/or metadata are not JSON object.
+			// message Payload and/or Metadata are not JSON object.
 			// The message will be discarded.
 			slogger.Warn("invalid message",
 				"error", err,
