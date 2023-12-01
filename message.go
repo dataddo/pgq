@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -41,6 +42,9 @@ type MessageIncoming struct {
 	// Attempt number, counts from 1. It is incremented every time the message is
 	// consumed.
 	Attempt int
+	// Deadline is the time when the message will be returned to the queue if not
+	// finished. It is set by the queue when the message is consumed.
+	Deadline time.Time
 
 	maxConsumedCount uint
 	// once ensures that the message will be finished only once. It's easier than

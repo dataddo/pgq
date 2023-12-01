@@ -19,6 +19,7 @@ func ExampleNewConsumer() {
 		pgq.WithLockDuration(10*time.Minute),
 		pgq.WithPollingInterval(500*time.Millisecond),
 		pgq.WithAckTimeout(5*time.Second),
+		pgq.WithMessageProcessingReserveDuration(5*time.Second),
 		pgq.WithMaxParallelMessages(42),
 		pgq.WithMetrics(noop.Meter{}),
 		pgq.WithHistoryLimit(24*time.Hour),

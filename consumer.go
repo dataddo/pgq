@@ -96,20 +96,24 @@ type consumerConfig struct {
 	// This is a safety mechanism to prevent failure infinite loops when a message causes unhandled panic, OOM etc.
 	MaxConsumeCount uint
 
+	// MsgProcessingReserveDuration is the duration for which the message is reserved for handling result state.
+	MessageProcessingReserveDuration time.Duration
+
 	Logger *slog.Logger
 }
 
 var noopLogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.Level(math.MaxInt)}))
 
 var defaultConsumerConfig = consumerConfig{
-	LockDuration:           time.Hour,
-	PollingInterval:        5 * time.Second,
-	AckTimeout:             1 * time.Second,
-	MaxParallelMessages:    1,
-	InvalidMessageCallback: func(context.Context, InvalidMessage, error) {},
-	Metrics:                noop.Meter{},
-	MaxConsumeCount:        3,
-	Logger:                 noopLogger,
+	LockDuration:                     time.Hour,
+	PollingInterval:                  5 * time.Second,
+	AckTimeout:                       1 * time.Second,
+	MessageProcessingReserveDuration: 1 * time.Second,
+	MaxParallelMessages:              1,
+	InvalidMessageCallback:           func(context.Context, InvalidMessage, error) {},
+	Metrics:                          noop.Meter{},
+	MaxConsumeCount:                  3,
+	Logger:                           noopLogger,
 }
 
 // InvalidMessageCallback defines what should happen to messages which are identified as invalid.
@@ -172,6 +176,13 @@ func WithMaxParallelMessages(n int) ConsumerOption {
 func WithMetrics(m metric.Meter) ConsumerOption {
 	return func(c *consumerConfig) {
 		c.Metrics = m
+	}
+}
+
+// WithMessageProcessingReserveDuration sets the duration for which the message is reserved for handling result state.
+func WithMessageProcessingReserveDuration(d time.Duration) ConsumerOption {
+	return func(c *consumerConfig) {
+		c.MessageProcessingReserveDuration = d
 	}
 }
 
@@ -370,12 +381,12 @@ func (c *Consumer) generateQuery() string {
 		sb.WriteString(` LIMIT $2`)
 		sb.WriteString(` FOR UPDATE SKIP LOCKED`)
 	}
-	sb.WriteString(`) RETURNING id, payload, metadata, consumed_count`)
+	sb.WriteString(`) RETURNING id, payload, metadata, consumed_count, locked_until`)
 	return sb.String()
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {
-	ctx, cancel := context.WithTimeout(ctx, c.cfg.LockDuration)
+	ctx, cancel := context.WithDeadline(ctx, msg.Deadline)
 	defer cancel()
 
 	ctxTimeout, cancel := prepareCtxTimeout()
@@ -470,10 +481,11 @@ func (c *Consumer) consumeMessages(ctx context.Context, query string) ([]*Messag
 }
 
 type pgMessage struct {
-	ID       pgtype.UUID
-	Payload  pgtype.JSONB
-	Metadata pgtype.JSONB
-	Attempt  pgtype.Int4
+	ID          pgtype.UUID
+	Payload     pgtype.JSONB
+	Metadata    pgtype.JSONB
+	Attempt     pgtype.Int4
+	LockedUntil pgtype.Timestamptz
 }
 
 func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit int64) (_ []*MessageIncoming, err error) {
@@ -537,6 +549,7 @@ func (c *Consumer) parseRow(ctx context.Context, rows *sql.Rows) (*MessageIncomi
 		&pgMsg.Payload,
 		&pgMsg.Metadata,
 		&pgMsg.Attempt,
+		&pgMsg.LockedUntil,
 	); err != nil {
 		if isErrorCode(err, undefinedTableErrCode, undefinedColumnErrCode) {
 			return nil, fatalError{Err: err}
@@ -605,6 +618,7 @@ func (c *Consumer) finishParsing(pgMsg pgMessage) (*MessageIncoming, error) {
 	}
 	msg.Attempt = int(pgMsg.Attempt.Int)
 	msg.maxConsumedCount = c.cfg.MaxConsumeCount
+	msg.Deadline = pgMsg.LockedUntil.Time.Add(-c.cfg.AckTimeout).Add(-c.cfg.MessageProcessingReserveDuration)
 	return msg, nil
 }
 
