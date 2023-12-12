@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"go.dataddo.com/pgq/internal/pg"
+	"go.dataddo.com/pgq/validator"
 )
 
 type fatalError struct {
@@ -98,6 +99,10 @@ type consumerConfig struct {
 
 	// MsgProcessingReserveDuration is the duration for which the message is reserved for handling result state.
 	MessageProcessingReserveDuration time.Duration
+
+	// Flag that enables queue validation. The queue validation assures that the queue that is going to be consumed
+	// has the expected schema definition
+	ValidateQueue bool
 
 	Logger *slog.Logger
 }
@@ -220,6 +225,12 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 	}
 }
 
+func WithValidateQueue(validateQueue bool) ConsumerOption {
+	return func(c *consumerConfig) {
+		c.ValidateQueue = validateQueue
+	}
+}
+
 // NewConsumer creates Consumer with proper settings
 func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
@@ -229,6 +240,13 @@ func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...C
 	metrics, err := prepareProcessMetric(queueName, config.Metrics)
 	if err != nil {
 		return nil, errors.Wrap(err, "registering metrics")
+	}
+	// validate queue schema (if indicated)
+	if config.ValidateQueue {
+		err = validator.Validate(db, queueName)
+		if err != nil {
+			return nil, errors.Wrap(err, "validating consumer queue")
+		}
 	}
 	sem := semaphore.NewWeighted(int64(config.MaxParallelMessages))
 	return &Consumer{
