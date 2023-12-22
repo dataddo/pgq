@@ -7,20 +7,6 @@ import (
 	"go.dataddo.com/pgq/internal/pg"
 )
 
-// This map will defined all the required fields that the queue should have as well as the type of each one.
-// It will be used the queue schema validation
-var Fields = map[string]string{
-	"id":             "UUID",
-	"created_at":     "TIMESTAMPTZ",
-	"started_at":     "TIMESTAMPTZ",
-	"locked_until":   "TIMESTAMPTZ",
-	"processed_at":   "TIMESTAMPTZ",
-	"consumed_count": "INTEGER",
-	"error_detail":   "TEXT",
-	"payload":        "JSONB",
-	"metadata":       "JSONB",
-}
-
 // GenerateCreateTableQuery returns the query for creating the queue table
 func GenerateCreateTableQuery(queueName string) string {
 	quotedTableName := pg.QuoteIdentifier(queueName)

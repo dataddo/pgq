@@ -14,7 +14,7 @@ import (
 	"go.dataddo.com/pgq/x/schema"
 )
 
-func TestValidator_ValidateCorrectSchema(t *testing.T) {
+func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
 	// --- (1) ----
 	// Arrange
 	ctx := context.Background()
@@ -29,13 +29,13 @@ func TestValidator_ValidateCorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = Validate(db, queueName)
+	err = ValidateFields(db, queueName)
 
 	// Assert
 	require.NoError(t, err)
 }
 
-func TestValidator_ValidateIncorrectSchema(t *testing.T) {
+func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 	// --- (1) ----
 	// Arrange
 	ctx := context.Background()
@@ -49,7 +49,7 @@ func TestValidator_ValidateIncorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = Validate(db, queueName)
+	err = ValidateFields(db, queueName)
 
 	// Assert
 	require.Error(t, err)

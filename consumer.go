@@ -97,10 +97,6 @@ type consumerConfig struct {
 	// This is a safety mechanism to prevent failure infinite loops when a message causes unhandled panic, OOM etc.
 	MaxConsumeCount uint
 
-	// Flag that enables queue validation. The queue validation assures that the queue that is going to be consumed
-	// has the expected schema definition
-	ValidateQueue bool
-
 	Logger *slog.Logger
 }
 
@@ -214,12 +210,6 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 	}
 }
 
-func WithValidateQueue(validateQueue bool) ConsumerOption {
-	return func(c *consumerConfig) {
-		c.ValidateQueue = validateQueue
-	}
-}
-
 // NewConsumer creates Consumer with proper settings
 func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
@@ -229,13 +219,6 @@ func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...C
 	metrics, err := prepareProcessMetric(queueName, config.Metrics)
 	if err != nil {
 		return nil, errors.Wrap(err, "registering metrics")
-	}
-	// validate queue schema (if indicated)
-	if config.ValidateQueue {
-		err = validator.Validate(db, queueName)
-		if err != nil {
-			return nil, errors.Wrap(err, "validating consumer queue")
-		}
 	}
 	sem := semaphore.NewWeighted(int64(config.MaxParallelMessages))
 	return &Consumer{
@@ -308,57 +291,21 @@ func (c *Consumer) Run(ctx context.Context) error {
 }
 
 func (c *Consumer) verifyTable(ctx context.Context) error {
-	rows, err := c.db.QueryContext(ctx, `SELECT column_name
-		FROM information_schema.columns
-		WHERE table_catalog = CURRENT_CATALOG
-  		AND table_schema = CURRENT_SCHEMA
-  		AND table_name = $1
-		ORDER BY ordinal_position;
-	`, c.queueName)
-	if err != nil {
-		return errors.Wrap(err, "querying schema of queue table")
-	}
-	defer rows.Close()
 
-	columns := make(map[string]struct{})
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return errors.Wrap(err, "reading schema row of queue table")
-		}
-		columns[s] = struct{}{}
+	// --- (1) ----
+	// Validate the queue mandatory fields
+	err := validator.ValidateFields(c.db, c.queueName)
+	if err != nil {
+		return errors.Wrap(err, "error validating queue mandatory fields")
 	}
-	if err := rows.Err(); err != nil {
-		return errors.Wrap(err, "reading schema of queue table")
+
+	// --- (2) ----
+	// Validate the queue mandatory indexes
+	err = validator.ValidateIndexes(c.db, c.queueName)
+	if err != nil {
+		return errors.Wrap(err, "error validating queue mandatory indexes")
 	}
-	if err := rows.Close(); err != nil {
-		return errors.Wrap(err, "closing schema query of queue table")
-	}
-	mandatoryFields := []string{
-		"id",
-		"locked_until",
-		"processed_at",
-		"consumed_count",
-		"started_at",
-		"payload",
-		"metadata",
-	}
-	var missingColumns []string
-	for _, mandatoryField := range mandatoryFields {
-		if _, ok := columns[mandatoryField]; !ok {
-			missingColumns = append(missingColumns, mandatoryField)
-		}
-		delete(columns, mandatoryField)
-	}
-	if len(missingColumns) > 1 {
-		return errors.Errorf("some PGQ columns are missing: %v", missingColumns)
-	}
-	// TODO log extra columns in queue table or ignore them?
-	// extraColumns := make([]string, 0, len(columns))
-	// for k := range columns {
-	//	extraColumns = append(extraColumns, k)
-	// }
-	// _ = extraColumns
+
 	return nil
 }
 
