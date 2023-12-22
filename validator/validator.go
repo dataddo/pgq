@@ -3,15 +3,61 @@ package validator
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
-	"go.dataddo.com/pgq/x/schema"
+	"github.com/pkg/errors"
 )
 
-const columnSelect = "SELECT column_name FROM information_schema.columns where table_name = $1; "
+const columnSelect = `SELECT column_name
+FROM information_schema.columns
+WHERE table_catalog = CURRENT_CATALOG
+  AND table_schema = CURRENT_SCHEMA
+  AND table_name = $1
+ORDER BY ordinal_position
+`
 
-func Validate(db *sql.DB, queueName string) error {
+const indexSelect = `
+SELECT
+    i.relname as index_name,
+    array_to_string(array_agg(a.attname), ', ') as column_names
+FROM
+    pg_class t,
+    pg_class i,
+    pg_index ix,
+    pg_attribute a
+WHERE
+    t.oid = ix.indrelid
+    and i.oid = ix.indexrelid
+    and a.attrelid = t.oid
+    and a.attnum = ANY(ix.indkey)
+    and t.relkind = 'r'
+    and t.relname = $1
+GROUP BY
+    t.relname,
+    i.relname
+ORDER BY
+    t.relname,
+    i.relname;
+`
+
+var mandatoryFields = []string{
+	"id",
+	"locked_until",
+	"processed_at",
+	"consumed_count",
+	"started_at",
+	"payload",
+	"metadata",
+}
+
+var mandatoryIndexes = [][]string{
+	{"created_at"},
+	{"processed_at"},
+}
+
+func ValidateFields(db *sql.DB, queueName string) error {
 	// --- (1) ----
-	// Recover the columns that current has
+	// Recover the columns that the queue has
 	columns, err := getColumnData(db, queueName)
 	if err != nil {
 		return err
@@ -19,43 +65,133 @@ func Validate(db *sql.DB, queueName string) error {
 
 	// --- (2) ----
 	// Run through each one of the recovered columns and validate if all the mandatory ones are included
-	var columnsFound int
-	for _, column := range columns {
-		if _, found := schema.Fields[column]; found {
-			// Mandatory field found
-			columnsFound++
+	var missingColumns []string
+	for _, mandatoryField := range mandatoryFields {
+		if _, ok := columns[mandatoryField]; !ok {
+			missingColumns = append(missingColumns, mandatoryField)
 		}
+		delete(columns, mandatoryField)
 	}
 
 	// If all the mandatory fields have been found then we don't need to return an error. However,
 	// if there is at least one mandatory field missing in the schema then this queue is invalid.
 	// TODO: Add some more logic to maybe indicate which field is the one that need to be included
-	if columnsFound != len(schema.Fields) {
-		return fmt.Errorf("error validating queue: mandatory fields missing from schema")
+	if len(missingColumns) > 1 {
+		return errors.Errorf("some PGQ columns are missing: %v", missingColumns)
 	}
 
-	// --- (3) ----
-	// Validate if requiered indexes exist
-	// TODO
-	// TODO
+	// TODO log extra columns in queue table or ignore them?
+	// extraColumns := make([]string, 0, len(columns))
+	// for k := range columns {
+	//	extraColumns = append(extraColumns, k)
+	// }
+	// _ = extraColumns
 
 	return nil
 }
 
-func getColumnData(db *sql.DB, queueName string) ([]string, error) {
+// Validate if requiered indexes exist
+// TODO
+// TODO
+func ValidateIndexes(db *sql.DB, queueName string) error {
+	// --- (1) ----
+	// Recover the indexes that the queue has
+	indexes, err := getIndexData(db, queueName)
+	if err != nil {
+		return err
+	}
+
+	// --- (2) ----
+	// Run through each one of the recovered indexes and see if the mandatory ones are included
+	var matchedIndexes int
+	for _, fields := range indexes {
+		if isIndexFound(fields) {
+			matchedIndexes++
+		}
+	}
+
+	// Check if we found all the mandatory indexes were found. If even 1 is missing, then we return an error
+	if matchedIndexes != len(mandatoryIndexes) {
+		return errors.Errorf("some PGQ indexes are missing")
+	}
+	return nil
+}
+
+func getColumnData(db *sql.DB, queueName string) (map[string]struct{}, error) {
 	rows, err := db.Query(columnSelect, queueName)
 	if err != nil {
-		return nil, fmt.Errorf("error recovering queue columns %v", err)
+		return nil, errors.Wrap(err, "querying schema of queue table")
 	}
 	defer rows.Close()
 
-	var ret []string
+	columns := make(map[string]struct{})
 	for rows.Next() {
-		var columnName string
-		if err := rows.Scan(&columnName); err != nil {
-			return nil, err
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, errors.Wrap(err, "reading schema row of queue table")
 		}
-		ret = append(ret, columnName)
+		columns[s] = struct{}{}
 	}
-	return ret, nil
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "reading schema of queue table")
+	}
+	if err := rows.Close(); err != nil {
+		return nil, errors.Wrap(err, "closing schema query of queue table")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error recovering queue columns %v", err)
+	}
+	return columns, nil
+}
+
+func getIndexData(db *sql.DB, queueName string) (map[string][]string, error) {
+	rows, err := db.Query(indexSelect, queueName)
+	if err != nil {
+		return nil, errors.Wrap(err, "querying index schema of queue table")
+	}
+	defer rows.Close()
+
+	indexes := make(map[string][]string)
+	for rows.Next() {
+		var indexName, indexColumns string
+		if err := rows.Scan(&indexName, &indexColumns); err != nil {
+			return nil, errors.Wrap(err, "reading index schema row of queue table")
+		}
+		indexes[indexName] = strings.Split(indexColumns, ",")
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "reading index schema of queue table")
+	}
+	if err := rows.Close(); err != nil {
+		return nil, errors.Wrap(err, "closing index schema query of queue table")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error recovering queue indexes %v", err)
+	}
+	return indexes, nil
+}
+
+func isIndexFound(columns []string) bool {
+	for _, mandatoryIndexColumns := range mandatoryIndexes {
+		if unorderedEqual(columns, mandatoryIndexColumns) {
+			return true
+		}
+	}
+	return false
+}
+
+func unorderedEqual(first, second []string) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	exists := make(map[string]bool)
+	for _, value := range first {
+		exists[value] = true
+	}
+	for _, value := range second {
+		if !exists[value] {
+			return false
+		}
+	}
+	return true
 }
