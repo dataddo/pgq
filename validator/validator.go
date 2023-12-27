@@ -50,6 +50,8 @@ var mandatoryFields = []string{
 	"metadata",
 }
 
+// A list of all the indexes that the queue should have. Each slice entrance is a slice itself
+// that contains the fields that are used to create each index.
 var mandatoryIndexes = [][]string{
 	{"created_at"},
 	{"processed_at"},
@@ -91,8 +93,6 @@ func ValidateFields(db *sql.DB, queueName string) error {
 }
 
 // Validate if requiered indexes exist
-// TODO
-// TODO
 func ValidateIndexes(db *sql.DB, queueName string) error {
 	// --- (1) ----
 	// Recover the indexes that the queue has

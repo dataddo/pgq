@@ -55,6 +55,47 @@ func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestValidator_ValidateIndexesCorrectSchema(t *testing.T) {
+	// --- (1) ----
+	// Arrange
+	ctx := context.Background()
+	db := openDB(t)
+	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
+
+	defer db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+
+	// Create the new queue
+	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	require.NoError(t, err)
+
+	// --- (2) ----
+	// Act: Validate queue
+	err = ValidateIndexes(db, queueName)
+
+	// Assert
+	require.NoError(t, err)
+}
+
+func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
+	// --- (1) ----
+	// Arrange
+	ctx := context.Background()
+	db := openDB(t)
+	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
+	defer db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+
+	// Create the new incorrect queue
+	_, err := db.ExecContext(ctx, generateInvalidQueueQuery(queueName))
+	require.NoError(t, err)
+
+	// --- (2) ----
+	// Act: Validate queue
+	err = ValidateIndexes(db, queueName)
+
+	// Assert
+	require.Error(t, err)
+}
+
 func generateRandomString(length int) string {
 	b := make([]byte, length)
 	_, err := rand.Read(b)
