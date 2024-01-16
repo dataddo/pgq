@@ -3,12 +3,12 @@ module go.dataddo.com/pgq
 go 1.21
 
 require (
-	github.com/google/uuid v1.4.0
-	github.com/jackc/pgtype v1.14.0
+	github.com/google/uuid v1.5.0
+	github.com/jackc/pgtype v1.14.1
 	github.com/pkg/errors v0.9.1
 	go.opentelemetry.io/otel v1.21.0
 	go.opentelemetry.io/otel/metric v1.21.0
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.6.0
 )
 
 require (
