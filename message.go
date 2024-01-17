@@ -4,37 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
-// Metadata is message metadata definition.
+// Metadata is message Metadata definition.
 type Metadata map[string]string
 
-// Message is an item retrieved from table queue in Postgres
-type Message interface {
-	// Metadata returns metadata of the message.
-	Metadata() Metadata
-	// Payload returns payload of the message.
-	Payload() json.RawMessage
-}
-
 // NewMessage creates new message that satisfies Message interface.
-func NewMessage(meta Metadata, payload json.RawMessage) Message {
-	return &message{
-		metadata: meta,
-		payload:  payload,
+func NewMessage(meta Metadata, payload json.RawMessage, attempt int, maxConsumedCount uint) *MessageIncoming {
+	return &MessageIncoming{
+		Metadata:         meta,
+		Payload:          payload,
+		Attempt:          attempt,
+		maxConsumedCount: maxConsumedCount,
 	}
 }
 
-type message struct {
-	// ID is an unique identifier of message
+// MessageOutgoing is a record to be inserted into table queue in Postgres
+type MessageOutgoing struct {
+	// Metadata contains the message Metadata.
+	Metadata Metadata
+	// Payload is the message's Payload.
+	Payload json.RawMessage
+}
+
+// MessageIncoming is a record retrieved from table queue in Postgres
+type MessageIncoming struct {
+	// id is an unique identifier of message
 	id uuid.UUID
-	// Metadata contains the message metadata.
-	metadata Metadata
-	// Payload is the message's payload.
-	payload json.RawMessage
+	// Metadata contains the message Metadata.
+	Metadata Metadata
+	// Payload is the message's Payload.
+	Payload json.RawMessage
+	// Attempt number, counts from 1. It is incremented every time the message is
+	// consumed.
+	Attempt int
+	// Deadline is the time when the message will be returned to the queue if not
+	// finished. It is set by the queue when the message is consumed.
+	Deadline time.Time
+
+	maxConsumedCount uint
 	// once ensures that the message will be finished only once. It's easier than
 	// complicated SQL queries.
 	once      sync.Once
@@ -43,21 +55,23 @@ type message struct {
 	discardFn func(context.Context, string) error
 }
 
-// Metadata returns metadata of the message.
-// Metadata is the key/value map being stored as a json object in the db table.
-// You may use it for passing any description data relevant to your message like labels etc.
-func (m *message) Metadata() Metadata { return m.metadata }
-
-// Payload returns payload of the message.
-func (m *message) Payload() json.RawMessage { return m.payload }
+// LastAttempt returns true if the message is consumed for the last time
+// according to maxConsumedCount settings. If the Consumer is not configured to
+// limit the number of attempts setting WithMaxConsumeCount to zero, it always
+// returns false.
+func (m *MessageIncoming) LastAttempt() bool {
+	if m.maxConsumedCount == 0 {
+		return false
+	}
+	return m.Attempt >= int(m.maxConsumedCount)
+}
 
 // errMessageAlreadyFinished is error that is returned if message is being
 // finished for second time. Example: when trying to ack after the nack has been already called.
 var errMessageAlreadyFinished = errors.New("message already finished")
 
-// ack positively acknowledges the message, and the message is marked as processed or removed from the queue
-// what happens to after ack depends on the CleanupStrategy.
-func (m *message) ack(ctx context.Context) error {
+// ack positively acknowledges the message, and the message is marked as processed.
+func (m *MessageIncoming) ack(ctx context.Context) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.ackFn(ctx)
@@ -65,9 +79,9 @@ func (m *message) ack(ctx context.Context) error {
 	return err
 }
 
-// nack does not the negative acknowledge of the message.
-// The message is returned to the queue after nack and may be processed again.
-func (m *message) nack(ctx context.Context, reason string) error {
+// nack does not the negative acknowledge of the message. The message is
+// returned to the queue after nack and may be processed again.
+func (m *MessageIncoming) nack(ctx context.Context, reason string) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.nackFn(ctx, reason)
@@ -75,8 +89,9 @@ func (m *message) nack(ctx context.Context, reason string) error {
 	return err
 }
 
-// discard removes the message from the queue completely
-func (m *message) discard(ctx context.Context, reason string) error {
+// discard removes the message from the queue completely. It's like ack, but it
+// also records the reason why the message was discarded.
+func (m *MessageIncoming) discard(ctx context.Context, reason string) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.discardFn(ctx, reason)

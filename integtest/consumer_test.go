@@ -39,7 +39,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
 	msgIDs, err := publisher.Publish(ctx, queueName,
-		NewMessage(Metadata{"foo": "bar"}, json.RawMessage(`{"foo":"bar"}`)),
+		&MessageOutgoing{Metadata: Metadata{"foo": "bar"}, Payload: json.RawMessage(`{"foo":"bar"}`)},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(msgIDs))
@@ -116,7 +116,7 @@ func ensureUUIDExtension(t *testing.T, db *sql.DB) {
 
 type slowHandler struct{}
 
-func (s *slowHandler) HandleMessage(ctx context.Context, _ Message) (processed bool, err error) {
+func (s *slowHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
 	<-ctx.Done()
 	return MessageNotProcessed, ctx.Err()
 }

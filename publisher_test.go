@@ -47,7 +47,7 @@ func Test_buildInsertQuery(t *testing.T) {
 func TestClient_buildArgs(t *testing.T) {
 	type args struct {
 		ctx  context.Context
-		msgs []Message
+		msgs []*MessageOutgoing
 	}
 	tests := []struct {
 		name string
@@ -58,8 +58,8 @@ func TestClient_buildArgs(t *testing.T) {
 			name: "",
 			args: args{
 				ctx: context.Background(),
-				msgs: []Message{
-					NewMessage(Metadata{}, nil),
+				msgs: []*MessageOutgoing{
+					{Metadata: Metadata{}, Payload: nil},
 				},
 			},
 			want: []any{
@@ -73,8 +73,8 @@ func TestClient_buildArgs(t *testing.T) {
 			name: "",
 			args: args{
 				ctx: context.Background(),
-				msgs: []Message{
-					NewMessage(Metadata{}, nil),
+				msgs: []*MessageOutgoing{
+					{Metadata: Metadata{}, Payload: nil},
 				},
 			},
 			want: []any{
