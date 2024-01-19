@@ -2,7 +2,6 @@ package validator
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -134,9 +133,6 @@ func getColumnData(db *sql.DB, queueName string) (map[string]struct{}, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errors.Wrap(err, "reading schema of queue table")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error recovering queue columns %v", err)
 	}
 	return columns, nil
 }
