@@ -19,7 +19,7 @@ ORDER BY ordinal_position
 const indexSelect = `
 SELECT
     i.relname as index_name,
-    array_to_string(array_agg(a.attname), ', ') as column_names
+    array_to_string(array_agg(a.attname), ',') as column_names
 FROM
     pg_class t,
     pg_class i,
@@ -135,9 +135,6 @@ func getColumnData(db *sql.DB, queueName string) (map[string]struct{}, error) {
 	if err := rows.Err(); err != nil {
 		return nil, errors.Wrap(err, "reading schema of queue table")
 	}
-	if err := rows.Close(); err != nil {
-		return nil, errors.Wrap(err, "closing schema query of queue table")
-	}
 	if err != nil {
 		return nil, fmt.Errorf("error recovering queue columns %v", err)
 	}
@@ -164,9 +161,6 @@ func getIndexData(db *sql.DB, queueName string) (map[string][]string, error) {
 	}
 	if err := rows.Close(); err != nil {
 		return nil, errors.Wrap(err, "closing index schema query of queue table")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error recovering queue indexes %v", err)
 	}
 	return indexes, nil
 }
