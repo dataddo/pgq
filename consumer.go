@@ -61,6 +61,18 @@ const (
 //	// | false     | some error | not processed, because of some error, can be retried |
 //	// | true      | <nil>      | processed, no error.                                 |
 //	// | true      | some error | processed, ended with error. Don't retry!            |
+//
+// The context is cancelled when the message processing deadline is exceeded, or
+// consumer is stopped. Tha calculation is:
+//
+//	ctx.Deadline() = locked_until - ack_timeout - message_processing_reserve_duration
+//
+// The 'locked_until' is defined by LockDuration option. The 'ack_timeout' is
+// defined by AckTimeout option and is meant for updating the message status
+// when message is processed. The 'message_processing_reserve_duration' is
+// defined by MessageProcessingReserveDuration option and is meant for reserving
+// some time to return from the called functions and reserve some time for
+// deferred function, etc.
 type MessageHandler interface {
 	HandleMessage(context.Context, *MessageIncoming) (processed bool, err error)
 }
@@ -359,7 +371,8 @@ func (c *Consumer) generateQuery() string {
 	var sb strings.Builder
 	sb.WriteString(`UPDATE `)
 	sb.WriteString(pg.QuoteIdentifier(c.queueName))
-	sb.WriteString(` SET locked_until = $1`)
+	sb.WriteString(` SET locked_until = CURRENT_TIMESTAMP +`)
+	sb.WriteString(` COALESCE((metadata ->> 'pgq:lock_duration'::text)::interval,($1::interval))`)
 	sb.WriteString(`, started_at = CURRENT_TIMESTAMP`)
 	sb.WriteString(`, consumed_count = consumed_count+1`)
 	sb.WriteString(` WHERE id IN (`)
@@ -386,7 +399,9 @@ func (c *Consumer) generateQuery() string {
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {
-	ctx, cancel := context.WithDeadline(ctx, msg.Deadline)
+	// TODO use context.WithDeadlineCause with defined error to signal message-specific deadline.
+	// It could be a struct, that informs if the message is from LockDuration or from message metadata['pgq:lock_duration']
+	ctx, cancel := context.WithDeadline(ctx, msg.deadline)
 	defer cancel()
 
 	ctxTimeout, cancel := prepareCtxTimeout()
@@ -508,8 +523,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit i
 		}
 	}()
 
-	lockedUntil := time.Now().Add(c.cfg.LockDuration)
-	args := []any{lockedUntil, limit}
+	args := []any{c.cfg.LockDuration, limit}
 	if c.cfg.HistoryLimit > 0 {
 		var scanInterval pgtype.Interval
 		// time.Duration doesn't ever fail
@@ -618,7 +632,7 @@ func (c *Consumer) finishParsing(pgMsg pgMessage) (*MessageIncoming, error) {
 	}
 	msg.Attempt = int(pgMsg.Attempt.Int)
 	msg.maxConsumedCount = c.cfg.MaxConsumeCount
-	msg.Deadline = pgMsg.LockedUntil.Time.Add(-c.cfg.AckTimeout).Add(-c.cfg.MessageProcessingReserveDuration)
+	msg.deadline = pgMsg.LockedUntil.Time.Add(-c.cfg.AckTimeout).Add(-c.cfg.MessageProcessingReserveDuration)
 	return msg, nil
 }
 

@@ -42,10 +42,12 @@ type MessageIncoming struct {
 	// Attempt number, counts from 1. It is incremented every time the message is
 	// consumed.
 	Attempt int
-	// Deadline is the time when the message will be returned to the queue if not
-	// finished. It is set by the queue when the message is consumed.
-	Deadline time.Time
 
+	// deadline is the time when the HandleMessage context will be cancelled and the
+	// message should be returned to the queue if not finished. It is set by the
+	// queue when the message is consumed.
+	deadline time.Time
+	// maxConsumedCount is the maximum number of attempts to consume the message. It's set by the consumer.
 	maxConsumedCount uint
 	// once ensures that the message will be finished only once. It's easier than
 	// complicated SQL queries.

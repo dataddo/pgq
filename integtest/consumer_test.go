@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -39,16 +40,24 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
 	msgIDs, err := publisher.Publish(ctx, queueName,
-		&MessageOutgoing{Metadata: Metadata{"foo": "bar"}, Payload: json.RawMessage(`{"foo":"bar"}`)},
+		&MessageOutgoing{Metadata: Metadata{
+			"foo":               "bar",
+			"pgq:lock_duration": "00:15:00", // 15 minutes
+		}, Payload: json.RawMessage(`{"foo":"bar"}`)},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(msgIDs))
 	msgID := msgIDs[0]
 
-	handler := &slowHandler{}
+	logger := slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	handler := &slowHandler{
+		log: logger,
+	}
 	consumer, err := NewConsumer(db, queueName, handler,
-		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithLogger(logger),
 		WithLockDuration(time.Hour),
+		WithMessageProcessingReserveDuration(time.Second),
+		WithAckTimeout(time.Second),
 		WithPollingInterval(time.Second),
 		WithMaxParallelMessages(1),
 		WithInvalidMessageCallback(func(_ context.Context, _ InvalidMessage, err error) {
@@ -58,7 +67,9 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	consumeCtx, consumeCancel := context.WithTimeoutCause(ctx, 10*time.Second,
+		errors.New("consumer.Run timeout"),
+	)
 	defer consumeCancel()
 	err = consumer.Run(consumeCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -114,11 +125,23 @@ func ensureUUIDExtension(t *testing.T, db *sql.DB) {
 	require.NoError(t, err)
 }
 
-type slowHandler struct{}
+type slowHandler struct {
+	log *slog.Logger
+}
 
 func (s *slowHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
+	defer func(now time.Time) {
+		s.log.InfoContext(ctx, "slowHandler.HandleMessage finished",
+			"processed", processed,
+			"err", err,
+			"duration", time.Since(now),
+		)
+	}(time.Now())
+	if deadline, ok := ctx.Deadline(); ok {
+		s.log.InfoContext(ctx, "slowHandler.HandleMessage deadline", "deadline", deadline)
+	}
 	<-ctx.Done()
-	return MessageNotProcessed, ctx.Err()
+	return MessageNotProcessed, context.Cause(ctx)
 }
 
 type tbWriter struct {

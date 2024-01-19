@@ -3,7 +3,6 @@ package pgq
 import (
 	"context"
 	"encoding/json"
-	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,7 +15,6 @@ func TestMessageIncoming_LastAttempt(t *testing.T) {
 		Payload          json.RawMessage
 		Attempt          int
 		maxConsumedCount uint
-		once             sync.Once
 		ackFn            func(ctx context.Context) error
 		nackFn           func(context.Context, string) error
 		discardFn        func(context.Context, string) error
@@ -66,7 +64,6 @@ func TestMessageIncoming_LastAttempt(t *testing.T) {
 				Payload:          tt.fields.Payload,
 				Attempt:          tt.fields.Attempt,
 				maxConsumedCount: tt.fields.maxConsumedCount,
-				once:             tt.fields.once,
 				ackFn:            tt.fields.ackFn,
 				nackFn:           tt.fields.nackFn,
 				discardFn:        tt.fields.discardFn,
