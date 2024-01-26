@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"testing"
 
 	"go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
 	"go.dataddo.com/pgq/x/schema"
+
+	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
 func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
@@ -108,11 +109,13 @@ func generateRandomString(length int) string {
 // TODO: This was recovered from the consumer_test.go file. We can make a common testing package and add all these common
 // functionalities will be included
 func openDB(t *testing.T) *sql.DB {
-	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
-	if !ok {
-		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
-	}
-	db, err := sql.Open("pgx", dsn)
+	// dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
+	// if !ok {
+	// 	t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
+	// }
+	// db, err := sql.Open("pgx", dsn)
+	connectionStr := "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	db, err := sql.Open("postgres", connectionStr)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := db.Close()
