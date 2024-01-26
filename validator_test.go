@@ -1,4 +1,4 @@
-package validator
+package pgq
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"testing"
 
 	"go.dataddo.com/pgq/internal/pg"
@@ -97,25 +98,14 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 	require.Error(t, err)
 }
 
-func generateRandomString(length int) string {
-	b := make([]byte, length)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	return base64.StdEncoding.EncodeToString(b)
-}
-
 // TODO: This was recovered from the consumer_test.go file. We can make a common testing package and add all these common
 // functionalities will be included
 func openDB(t *testing.T) *sql.DB {
-	// dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
-	// if !ok {
-	// 	t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
-	// }
-	// db, err := sql.Open("pgx", dsn)
-	connectionStr := "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
-	db, err := sql.Open("postgres", connectionStr)
+	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
+	if !ok {
+		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
+	}
+	db, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := db.Close()
@@ -136,6 +126,15 @@ func ensureUUIDExtension(t *testing.T, db *sql.DB) {
 		END $$;
 	`)
 	require.NoError(t, err)
+}
+
+func generateRandomString(length int) string {
+	b := make([]byte, length)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 func generateInvalidQueueQuery(queueName string) string {

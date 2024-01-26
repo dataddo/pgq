@@ -27,7 +27,6 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"go.dataddo.com/pgq/internal/pg"
-	"go.dataddo.com/pgq/validator"
 )
 
 type fatalError struct {
@@ -305,14 +304,14 @@ func (c *Consumer) verifyTable(ctx context.Context) error {
 
 	// --- (1) ----
 	// Validate the queue mandatory fields
-	err := validator.ValidateFields(c.db, c.queueName)
+	err := ValidateFields(c.db, c.queueName)
 	if err != nil {
 		return errors.Wrap(err, "error validating queue mandatory fields")
 	}
 
 	// --- (2) ----
 	// Validate the queue mandatory indexes
-	err = validator.ValidateIndexes(c.db, c.queueName)
+	err = ValidateIndexes(c.db, c.queueName)
 	if err != nil {
 		return errors.Wrap(err, "error validating queue mandatory indexes")
 	}
