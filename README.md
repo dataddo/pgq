@@ -26,6 +26,10 @@ but simple message queues for their services composed architecture using the fam
 Of course, you can implement your own implementation or use other messaging technologies,
 but why would you do that when you can use the `postgres` which is already there and is a proven technology? 
 
+See the benefits using pgq in the <a href="https://www.youtube.com/watch?v=feJbKEAvBLk" target="_blank">following video</a>: 
+
+[![PGQ promo video](https://img.youtube.com/vi/feJbKEAvBLk/3.jpg)](https://www.youtube.com/watch?v=feJbKEAvBLk)
+
 ## When to pick PGQ?
 
 Even though there are other great technologies and tools for complex messaging including the robust routing configuration,
