@@ -29,7 +29,7 @@ WHERE
     and i.oid = ix.indexrelid
     and a.attrelid = t.oid
     and a.attnum = ANY(ix.indkey)
-    and t.relkind = 'r'
+    and t.relkind IN ('r','p')
     and t.relname = $1
 GROUP BY
     t.relname,
@@ -56,6 +56,7 @@ var mandatoryIndexes = [][]string{
 	{"processed_at"},
 }
 
+// ValidateFields checks if required fields exist
 func ValidateFields(db *sql.DB, queueName string) error {
 	// --- (1) ----
 	// Recover the columns that the queue has
@@ -91,7 +92,7 @@ func ValidateFields(db *sql.DB, queueName string) error {
 	return nil
 }
 
-// Validate if requiered indexes exist
+// ValidateIndexes checks if required indexes exist
 func ValidateIndexes(db *sql.DB, queueName string) error {
 	// --- (1) ----
 	// Recover the indexes that the queue has
