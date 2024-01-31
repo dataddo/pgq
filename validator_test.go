@@ -31,7 +31,7 @@ func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = ValidateFields(db, queueName)
+	err = ValidateFields(ctx, db, queueName)
 
 	// Assert
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = ValidateFields(db, queueName)
+	err = ValidateFields(ctx, db, queueName)
 
 	// Assert
 	require.Error(t, err)
@@ -72,7 +72,28 @@ func TestValidator_ValidateIndexesCorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = ValidateIndexes(db, queueName)
+	err = ValidateIndexes(ctx, db, queueName)
+
+	// Assert
+	require.NoError(t, err)
+}
+
+func TestValidator_ValidateIndexesCorrectSchema_CompositeIndexes(t *testing.T) {
+	// --- (1) ----
+	// Arrange
+	ctx := context.Background()
+	db := openDB(t)
+	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
+
+	defer db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+
+	// Create the new queue
+	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQueryCompositeIndex(queueName))
+	require.NoError(t, err)
+
+	// --- (2) ----
+	// Act: Validate queue
+	err = ValidateIndexes(ctx, db, queueName)
 
 	// Assert
 	require.NoError(t, err)
@@ -92,7 +113,7 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 
 	// --- (2) ----
 	// Act: Validate queue
-	err = ValidateIndexes(db, queueName)
+	err = ValidateIndexes(ctx, db, queueName)
 
 	// Assert
 	require.Error(t, err)

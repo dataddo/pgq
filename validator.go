@@ -1,8 +1,8 @@
 package pgq
 
 import (
+	"context"
 	"database/sql"
-	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -17,26 +17,20 @@ ORDER BY ordinal_position
 
 const indexSelect = `
 SELECT
-    i.relname as index_name,
-    array_to_string(array_agg(a.attname), ',') as column_names
+    COUNT(DISTINCT a.attname) >= 2 AS index_exists
 FROM
-    pg_class t,
-    pg_class i,
-    pg_index ix,
-    pg_attribute a
+    pg_class t
+JOIN
+    pg_index ix ON t.oid = ix.indrelid
+JOIN
+    pg_class i ON i.oid = ix.indexrelid
+JOIN
+    pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
 WHERE
-    t.oid = ix.indrelid
-    and i.oid = ix.indexrelid
-    and a.attrelid = t.oid
-    and a.attnum = ANY(ix.indkey)
-    and t.relkind IN ('r','p')
-    and t.relname = $1
-GROUP BY
-    t.relname,
-    i.relname
-ORDER BY
-    t.relname,
-    i.relname;
+    t.relkind IN ('r', 'p')
+    AND t.relname = $1
+    AND a.attname = ANY($2)
+    AND ix.indisvalid;
 `
 
 var mandatoryFields = []string{
@@ -51,16 +45,16 @@ var mandatoryFields = []string{
 
 // A list of all the indexes that the queue should have. Each slice entrance is a slice itself
 // that contains the fields that are used to create each index.
-var mandatoryIndexes = [][]string{
-	{"created_at"},
-	{"processed_at"},
+var mandatoryIndexes = []string{
+	"created_at",
+	"processed_at",
 }
 
 // ValidateFields checks if required fields exist
-func ValidateFields(db *sql.DB, queueName string) error {
+func ValidateFields(ctx context.Context, db *sql.DB, queueName string) error {
 	// --- (1) ----
 	// Recover the columns that the queue has
-	columns, err := getColumnData(db, queueName)
+	columns, err := getColumnData(ctx, db, queueName)
 	if err != nil {
 		return err
 	}
@@ -93,36 +87,25 @@ func ValidateFields(db *sql.DB, queueName string) error {
 }
 
 // ValidateIndexes checks if required indexes exist
-func ValidateIndexes(db *sql.DB, queueName string) error {
-	// --- (1) ----
-	// Recover the indexes that the queue has
-	indexes, err := getIndexData(db, queueName)
+func ValidateIndexes(ctx context.Context, db *sql.DB, queueName string) error {
+	found, err := checkIndexData(ctx, db, queueName)
 	if err != nil {
 		return err
 	}
 
-	// --- (2) ----
-	// Run through each one of the recovered indexes and see if the mandatory ones are included
-	var matchedIndexes int
-	for _, fields := range indexes {
-		if isIndexFound(fields) {
-			matchedIndexes++
-		}
-	}
-
 	// Check if we found all the mandatory indexes were found. If even 1 is missing, then we return an error
-	if matchedIndexes != len(mandatoryIndexes) {
-		return errors.Errorf("some PGQ indexes are missing")
+	if !found {
+		return errors.Errorf("some PGQ indexes are missing or invalid")
 	}
 	return nil
 }
 
-func getColumnData(db *sql.DB, queueName string) (map[string]struct{}, error) {
-	rows, err := db.Query(columnSelect, queueName)
+func getColumnData(ctx context.Context, db *sql.DB, queueName string) (map[string]struct{}, error) {
+	rows, err := db.QueryContext(ctx, columnSelect, queueName)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying schema of queue table")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	columns := make(map[string]struct{})
 	for rows.Next() {
@@ -138,51 +121,24 @@ func getColumnData(db *sql.DB, queueName string) (map[string]struct{}, error) {
 	return columns, nil
 }
 
-func getIndexData(db *sql.DB, queueName string) (map[string][]string, error) {
-	rows, err := db.Query(indexSelect, queueName)
+func checkIndexData(ctx context.Context, db *sql.DB, queueName string) (bool, error) {
+	rows, err := db.QueryContext(ctx, indexSelect, queueName, mandatoryIndexes)
 	if err != nil {
-		return nil, errors.Wrap(err, "querying index schema of queue table")
+		return false, errors.Wrap(err, "querying index schema of queue table")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
-	indexes := make(map[string][]string)
+	var allMandatoryColumnsAreIndexed bool
 	for rows.Next() {
-		var indexName, indexColumns string
-		if err := rows.Scan(&indexName, &indexColumns); err != nil {
-			return nil, errors.Wrap(err, "reading index schema row of queue table")
+		if err := rows.Scan(&allMandatoryColumnsAreIndexed); err != nil {
+			return false, errors.Wrap(err, "reading index schema row of queue table")
 		}
-		indexes[indexName] = strings.Split(indexColumns, ",")
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "reading index schema of queue table")
+		return false, errors.Wrap(err, "reading index schema of queue table")
 	}
 	if err := rows.Close(); err != nil {
-		return nil, errors.Wrap(err, "closing index schema query of queue table")
+		return false, errors.Wrap(err, "closing index schema query of queue table")
 	}
-	return indexes, nil
-}
-
-func isIndexFound(columns []string) bool {
-	for _, mandatoryIndexColumns := range mandatoryIndexes {
-		if unorderedEqual(columns, mandatoryIndexColumns) {
-			return true
-		}
-	}
-	return false
-}
-
-func unorderedEqual(first, second []string) bool {
-	if len(first) != len(second) {
-		return false
-	}
-	exists := make(map[string]bool)
-	for _, value := range first {
-		exists[value] = true
-	}
-	for _, value := range second {
-		if !exists[value] {
-			return false
-		}
-	}
-	return true
+	return allMandatoryColumnsAreIndexed, nil
 }
