@@ -335,7 +335,8 @@ func (c *Consumer) generateQuery() string {
 			sb.WriteString(` created_at >= CURRENT_TIMESTAMP - $3::interval AND`)
 			sb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
-		sb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
+		sb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND`)
+		sb.WriteString(` delayed_until < CURRENT_TIMESTAMP`)
 		if c.cfg.MaxConsumeCount > 0 {
 			sb.WriteString(` AND consumed_count < `)
 			sb.WriteString(strconv.FormatUint(uint64(c.cfg.MaxConsumeCount), 10))
