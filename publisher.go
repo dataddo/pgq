@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	stderrors "errors"
+	"fmt"
 	"maps"
 	"strings"
 
@@ -112,7 +113,7 @@ func buildInsertQuery(queue string, msgCount int) string {
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO ")
 	sb.WriteString(pg.QuoteIdentifier(queue))
-	sb.WriteString(" (payload, metadata) VALUES ")
+	sb.WriteString(" (payload, metadata, delayed_until) VALUES ")
 	var params pg.StmtParams
 	for rowIdx := 0; rowIdx < msgCount; rowIdx++ {
 		if rowIdx != 0 {
@@ -122,6 +123,8 @@ func buildInsertQuery(queue string, msgCount int) string {
 		sb.WriteString(params.Next())
 		sb.WriteString(",")
 		sb.WriteString(params.Next())
+		sb.WriteString(",")
+		sb.WriteString(fmt.Sprintf("NOW()+make_interval(secs => %s)", params.Next()))
 		sb.WriteString(")")
 	}
 	sb.WriteString(` RETURNING "id"`)
@@ -134,7 +137,7 @@ func (d *publisher) buildArgs(ctx context.Context, msgs []*MessageOutgoing) []an
 		for _, injector := range d.cfg.metaInjectors {
 			injector(ctx, msg.Metadata)
 		}
-		args = append(args, msg.Payload, msg.Metadata)
+		args = append(args, msg.Payload, msg.Metadata, msg.Delay)
 	}
 	return args
 }

@@ -24,7 +24,7 @@ func Test_buildInsertQuery(t *testing.T) {
 				queue:    "queue",
 				msgCount: 1,
 			},
-			want: `INSERT INTO "queue" (payload, metadata) VALUES ($1,$2) RETURNING "id"`,
+			want: `INSERT INTO "queue" (payload, metadata, delayed_until) VALUES ($1,$2,NOW()+make_interval(secs => $3)) RETURNING "id"`,
 		},
 		{
 			name: "multiple messages",
@@ -32,7 +32,7 @@ func Test_buildInsertQuery(t *testing.T) {
 				queue:    "queue",
 				msgCount: 3,
 			},
-			want: `INSERT INTO "queue" (payload, metadata) VALUES ($1,$2),($3,$4),($5,$6) RETURNING "id"`,
+			want: `INSERT INTO "queue" (payload, metadata, delayed_until) VALUES ($1,$2,NOW()+make_interval(secs => $3)),($4,$5,NOW()+make_interval(secs => $6)),($7,$8,NOW()+make_interval(secs => $9)) RETURNING "id"`,
 		},
 	}
 	for _, tt := range tests {
@@ -59,7 +59,7 @@ func TestClient_buildArgs(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				msgs: []*MessageOutgoing{
-					{Metadata: Metadata{}, Payload: nil},
+					{Metadata: Metadata{}, Payload: nil, Delay: 0},
 				},
 			},
 			want: []any{
@@ -67,6 +67,7 @@ func TestClient_buildArgs(t *testing.T) {
 				Metadata{
 					"foo": "bar",
 				},
+				0,
 			},
 		},
 		{
@@ -74,7 +75,7 @@ func TestClient_buildArgs(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				msgs: []*MessageOutgoing{
-					{Metadata: Metadata{}, Payload: nil},
+					{Metadata: Metadata{}, Payload: nil, Delay: 0},
 				},
 			},
 			want: []any{
@@ -82,6 +83,7 @@ func TestClient_buildArgs(t *testing.T) {
 				Metadata{
 					"foo": "bar",
 				},
+				0,
 			},
 		},
 	}
