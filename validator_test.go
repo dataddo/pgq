@@ -37,6 +37,52 @@ func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidator_ValidateFieldsCorrectSchemaPartitionedTable(t *testing.T) {
+	// --- (1) ----
+	// Arrange
+	ctx := context.Background()
+	db := openDB(t)
+	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
+
+	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
+
+	// Create the new queue
+	_, err := db.ExecContext(ctx, generateCreateTablePartitionedQuery(queueName))
+	require.NoError(t, err)
+
+	// --- (2) ----
+	// Act: Validate queue
+	err = ValidateFields(ctx, db, queueName)
+
+	// Assert
+	require.NoError(t, err)
+}
+
+func generateCreateTablePartitionedQuery(queueName string) string {
+	quotedTableName := pg.QuoteIdentifier(queueName)
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %[1]s
+	(
+		id             UUID        DEFAULT gen_random_uuid() NOT NULL,
+		created_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+		started_at     TIMESTAMPTZ                           NULL,
+		locked_until   TIMESTAMPTZ                           NULL,
+		processed_at   TIMESTAMPTZ                           NULL,
+		consumed_count INTEGER     DEFAULT 0                 NOT NULL,
+		error_detail   TEXT                                  NULL,
+		payload        JSONB                                 NOT NULL,
+		metadata       JSONB                                 NOT NULL
+	) PARTITION BY RANGE (created_at);
+	CREATE TABLE "%[2]s_y2024m02" PARTITION OF %[1]s FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+	CREATE INDEX IF NOT EXISTS "%[2]s_created_at_idx" ON %[1]s (created_at);
+	CREATE INDEX IF NOT EXISTS "%[2]s_processed_at_null_idx" ON %[1]s (processed_at) WHERE (processed_at IS NULL);
+	`, quotedTableName, quotedTableName[1:len(quotedTableName)-1])
+}
+
+func generateDropTableQuery(queueName string) string {
+	quotedTableName := pg.QuoteIdentifier(queueName)
+	return `DROP TABLE IF EXISTS ` + quotedTableName
+}
+
 func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 	// --- (1) ----
 	// Arrange
