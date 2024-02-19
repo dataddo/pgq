@@ -14,6 +14,7 @@ func GenerateCreateTableQuery(queueName string) string {
 	(
 		id             UUID        DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
 		created_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+		delayed_until  TIMESTAMPTZ                           NULL,
 		started_at     TIMESTAMPTZ                           NULL,
 		locked_until   TIMESTAMPTZ                           NULL,
 		processed_at   TIMESTAMPTZ                           NULL,

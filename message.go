@@ -29,6 +29,8 @@ type MessageOutgoing struct {
 	Metadata Metadata
 	// Payload is the message's Payload.
 	Payload json.RawMessage
+	// Delay (seconds) is the time when the message should become visible in the queue.
+	Delay int
 }
 
 // MessageIncoming is a record retrieved from table queue in Postgres
