@@ -301,17 +301,16 @@ func (c *Consumer) Run(ctx context.Context) error {
 }
 
 func (c *Consumer) verifyTable(ctx context.Context) error {
-
 	// --- (1) ----
 	// Validate the queue mandatory fields
-	err := ValidateFields(c.db, c.queueName)
+	err := ValidateFields(ctx, c.db, c.queueName)
 	if err != nil {
 		return errors.Wrap(err, "error validating queue mandatory fields")
 	}
 
 	// --- (2) ----
 	// Validate the queue mandatory indexes
-	err = ValidateIndexes(c.db, c.queueName)
+	err = ValidateIndexes(ctx, c.db, c.queueName)
 	if err != nil {
 		return errors.Wrap(err, "error validating queue mandatory indexes")
 	}
