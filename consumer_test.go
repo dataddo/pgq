@@ -41,7 +41,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 			args: args{
 				queueName: "testing_queue",
 				opts: []ConsumerOption{
-					WithMetadataFilter(&MetadataFilter{"foo", "bar"}),
+					WithMetadataFilter(&MetadataFilter{Key: "foo", Operation: OpEqual, Value: "bar"}),
 				},
 			},
 			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND metadata->>:metadata_key_0 = :metadata_value_0 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
@@ -83,7 +83,8 @@ func TestConsumer_generateQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c, err := NewConsumer(nil, tt.args.queueName, nil, tt.args.opts...)
 			require.NoError(t, err)
-			got := c.generateQuery()
+			got, err := c.generateQuery()
+			require.NoError(t, err)
 			require.Equal(t, tt.want, got.String())
 		})
 	}

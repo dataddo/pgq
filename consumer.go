@@ -223,10 +223,21 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 }
 
 // MetadataFilter is a filter for metadata. Right now support only direct matching of key/value
-type MetadataFilter struct {
-	Key   string
-	Value string
-}
+type (
+	MetadataOperation string
+
+	MetadataFilter struct {
+		Key       string
+		Operation MetadataOperation
+		Value     string
+	}
+)
+
+const (
+	OpEqual    MetadataOperation = "="
+	OpNotEqual MetadataOperation = "<>"
+	OpLike     MetadataOperation = "LIKE"
+)
 
 func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
 	return func(c *consumerConfig) {
@@ -296,7 +307,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 	if err := c.verifyTable(ctx); err != nil {
 		return errors.Wrap(err, "verifying table")
 	}
-	query := c.generateQuery()
+	query, err := c.generateQuery()
+	if err != nil {
+		return errors.Wrap(err, "generating query")
+	}
+
 	var wg sync.WaitGroup
 	defer wg.Wait() // wait for handlers to finish
 	for {
@@ -337,7 +352,7 @@ func (c *Consumer) verifyTable(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) generateQuery() *QueryBuilder {
+func (c *Consumer) generateQuery() (*QueryBuilder, error) {
 	qb := NewQueryBuilder()
 
 	qb.WriteString(`UPDATE `)
@@ -360,8 +375,13 @@ func (c *Consumer) generateQuery() *QueryBuilder {
 		}
 
 		if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
-			for i := range c.cfg.MetadataFilters {
-				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d = :metadata_value_%d", i, i))
+			for i, filter := range c.cfg.MetadataFilters {
+				if len(filter.Operation) == 0 {
+					return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
+				}
+
+				fmt.Printf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i)
+				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
 			}
 		}
 
@@ -372,7 +392,7 @@ func (c *Consumer) generateQuery() *QueryBuilder {
 	}
 	qb.WriteString(`) RETURNING id, payload, metadata, consumed_count, locked_until`)
 
-	return qb
+	return qb, nil
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {

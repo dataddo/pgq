@@ -131,7 +131,7 @@ func TestConsumer_Run_metadata_filter(t *testing.T) {
 		WithLockDuration(time.Hour),
 		WithPollingInterval(time.Second),
 		WithMaxParallelMessages(1),
-		WithMetadataFilter(&MetadataFilter{Key: "baz", Value: "quux"}),
+		WithMetadataFilter(&MetadataFilter{Key: "baz", Operation: OpEqual, Value: "quux"}),
 		WithInvalidMessageCallback(func(_ context.Context, _ InvalidMessage, err error) {
 			require.NoError(t, err)
 		}),
@@ -201,13 +201,11 @@ type (
 )
 
 func (s *regularHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
-	fmt.Println("---- regular Handler")
 	<-ctx.Done()
 	return MessageProcessed, nil
 }
 
 func (s *slowHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
-	fmt.Println("---- slow Handler")
 	<-ctx.Done()
 	return MessageNotProcessed, ctx.Err()
 }
