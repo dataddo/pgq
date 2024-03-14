@@ -32,6 +32,11 @@ func (qb *QueryBuilder) HasParam(name string) bool {
 	}
 	return false
 }
+
+func (qb *QueryBuilder) String() string {
+	return qb.query.String()
+}
+
 func (qb *QueryBuilder) Build(params map[string]interface{}) (string, error) {
 	// Validate that the params map includes all parameter names from qb.params
 	for _, paramName := range qb.params {
@@ -40,7 +45,7 @@ func (qb *QueryBuilder) Build(params map[string]interface{}) (string, error) {
 		}
 	}
 
-	queryString := qb.query.String()
+	queryString := qb.String()
 
 	return queryString, nil
 }

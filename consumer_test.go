@@ -23,7 +23,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 		{
 			name: "simple",
 			args: args{queueName: "testing_queue"},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < 3 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "scanInterval 12 hours",
@@ -34,7 +34,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithHistoryLimit(12 * time.Hour),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - $3::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < 3 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "scn interval 12 hours abd max consumed count limit disabled",
@@ -46,12 +46,12 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithMaxConsumeCount(0),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - $3::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "with metadata condition",
 			args: args{queueName: "testing_queue"},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < 3 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "scanInterval 12 hours with metadata condition",
@@ -61,12 +61,12 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithHistoryLimit(12 * time.Hour),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - $3::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < 3 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "with negative metadata condition",
 			args: args{queueName: "testing_queue"},
-			want: "UPDATE \"testing_queue\" SET locked_until = $1, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < 3 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 	}
 	for _, tt := range tests {
@@ -74,7 +74,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 			c, err := NewConsumer(nil, tt.args.queueName, nil, tt.args.opts...)
 			require.NoError(t, err)
 			got := c.generateQuery()
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got.String())
 		})
 	}
 }
