@@ -39,6 +39,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	})
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
+
 	msgIDs, err := publisher.Publish(ctx, queueName,
 		&MessageOutgoing{Metadata: Metadata{"foo": "bar"}, Payload: json.RawMessage(`{"foo":"bar"}`)},
 	)
@@ -46,6 +47,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	require.Equal(t, 1, len(msgIDs))
 	msgID := msgIDs[0]
 
+	// consumer
 	handler := &slowHandler{}
 	consumer, err := NewConsumer(db, queueName, handler,
 		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
@@ -67,6 +69,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	err = db.Close()
 	require.NoError(t, err)
 
+	// evaluate
 	query := fmt.Sprintf(
 		`SELECT locked_until, consumed_count FROM %s WHERE id = $1`,
 		pg.QuoteIdentifier(queueName),
@@ -85,6 +88,83 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, false, lockedUntil.Valid)
 	require.Equal(t, 1, processedCount)
+}
+
+func TestConsumer_Run_metadata_filter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+
+	db := openDB(t)
+	queueName := t.Name()
+	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	t.Cleanup(func() {
+		db := openDB(t)
+		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		require.NoError(t, err)
+		err = db.Close()
+		require.NoError(t, err)
+	})
+	require.NoError(t, err)
+	publisher := NewPublisher(db)
+
+	msgIDs, err := publisher.Publish(ctx, queueName,
+		&MessageOutgoing{Metadata: Metadata{"baz": "quux"}, Payload: json.RawMessage(`{"baz":"queex"}`)},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(msgIDs))
+
+	simpleMsgIDs, err := publisher.Publish(ctx, queueName,
+		&MessageOutgoing{Metadata: Metadata{"foo": "bar"}, Payload: json.RawMessage(`{"foo":"bar"}`)},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(simpleMsgIDs))
+
+	// consumer
+	handler := &regularHandler{}
+	consumer, err := NewConsumer(db, queueName, handler,
+		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithLockDuration(time.Hour),
+		WithPollingInterval(time.Second),
+		WithMaxParallelMessages(1),
+		WithMetadataFilter(&MetadataFilter{Key: "baz", Value: "quux"}),
+		WithInvalidMessageCallback(func(_ context.Context, _ InvalidMessage, err error) {
+			require.NoError(t, err)
+		}),
+		WithMetrics(noop.Meter{}),
+	)
+	require.NoError(t, err)
+
+	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer consumeCancel()
+	err = consumer.Run(consumeCtx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	err = db.Close()
+	require.NoError(t, err)
+
+	// evaluate
+	query := fmt.Sprintf(
+		`SELECT count(1) FROM %s WHERE processed_at is null`,
+		pg.QuoteIdentifier(queueName),
+	)
+	db = openDB(t)
+	t.Cleanup(func() {
+		err := db.Close()
+		require.NoError(t, err)
+	})
+	row := db.QueryRowContext(ctx, query)
+	var (
+		msgCount int
+	)
+	err = row.Scan(&msgCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, msgCount)
+
 }
 
 func openDB(t *testing.T) *sqlx.DB {
@@ -115,9 +195,19 @@ func ensureUUIDExtension(t *testing.T, db *sqlx.DB) {
 	require.NoError(t, err)
 }
 
-type slowHandler struct{}
+type (
+	slowHandler    struct{}
+	regularHandler struct{}
+)
+
+func (s *regularHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
+	fmt.Println("---- regular Handler")
+	<-ctx.Done()
+	return MessageProcessed, nil
+}
 
 func (s *slowHandler) HandleMessage(ctx context.Context, _ *MessageIncoming) (processed bool, err error) {
+	fmt.Println("---- slow Handler")
 	<-ctx.Done()
 	return MessageNotProcessed, ctx.Err()
 }
