@@ -37,6 +37,16 @@ func TestConsumer_generateQuery(t *testing.T) {
 			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
+			name: "consume messages with metadata filter",
+			args: args{
+				queueName: "testing_queue",
+				opts: []ConsumerOption{
+					WithMetadataFilter(&MetadataFilter{"foo", "bar"}),
+				},
+			},
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND metadata->>:metadata_key_0 = :metadata_value_0 AND processed_at IS NULL ORDER BY consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+		},
+		{
 			name: "scn interval 12 hours abd max consumed count limit disabled",
 
 			args: args{

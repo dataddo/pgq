@@ -99,6 +99,8 @@ type consumerConfig struct {
 	// MsgProcessingReserveDuration is the duration for which the message is reserved for handling result state.
 	MessageProcessingReserveDuration time.Duration
 
+	MetadataFilters []MetadataFilter
+
 	Logger *slog.Logger
 }
 
@@ -223,7 +225,18 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 // MetadataFilter is a filter for metadata. Right now support only direct matching of key/value
 type MetadataFilter struct {
 	Key   string
-	Value interface{}
+	Value string
+}
+
+func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
+	return func(c *consumerConfig) {
+		filters := c.MetadataFilters
+		if filter == nil {
+			filters = make([]MetadataFilter, 0, 1)
+		}
+
+		c.MetadataFilters = append(filters, *filter)
+	}
 }
 
 // NewConsumer creates Consumer with proper settings
@@ -344,6 +357,12 @@ func (c *Consumer) generateQuery() *QueryBuilder {
 		qb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
 		if c.cfg.MaxConsumeCount > 0 {
 			qb.WriteString(` AND consumed_count < :max_consume_count`)
+		}
+
+		if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
+			for i := range c.cfg.MetadataFilters {
+				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d = :metadata_value_%d", i, i))
+			}
 		}
 
 		qb.WriteString(` AND processed_at IS NULL`)
@@ -495,6 +514,13 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *QueryBuilder, 
 
 	if query.HasParam("max_consume_count") {
 		namedParams["max_consume_count"] = c.cfg.MaxConsumeCount
+	}
+
+	if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
+		for i, filter := range c.cfg.MetadataFilters {
+			namedParams[fmt.Sprintf("metadata_key_%d", i)] = filter.Key
+			namedParams[fmt.Sprintf("metadata_value_%d", i)] = filter.Value
+		}
 	}
 
 	queryString, err := query.Build(namedParams)
