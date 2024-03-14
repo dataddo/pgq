@@ -236,7 +236,6 @@ type (
 const (
 	OpEqual    MetadataOperation = "="
 	OpNotEqual MetadataOperation = "<>"
-	OpLike     MetadataOperation = "LIKE"
 )
 
 func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
