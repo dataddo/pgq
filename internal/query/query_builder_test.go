@@ -1,4 +1,4 @@
-package pgq
+package query
 
 import (
 	"reflect"

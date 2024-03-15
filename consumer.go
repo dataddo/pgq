@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"go.dataddo.com/pgq/internal/pg"
+	"go.dataddo.com/pgq/internal/query"
 )
 
 type fatalError struct {
@@ -351,8 +352,8 @@ func (c *Consumer) verifyTable(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) generateQuery() (*QueryBuilder, error) {
-	qb := NewQueryBuilder()
+func (c *Consumer) generateQuery() (*query.Builder, error) {
+	qb := query.NewBuilder()
 
 	qb.WriteString(`UPDATE `)
 	qb.WriteString(pg.QuoteIdentifier(c.queueName))
@@ -464,7 +465,7 @@ func prepareCtxTimeout() (func(td time.Duration) context.Context, context.Cancel
 	return fn, cancel
 }
 
-func (c *Consumer) consumeMessages(ctx context.Context, query *QueryBuilder) ([]*MessageIncoming, error) {
+func (c *Consumer) consumeMessages(ctx context.Context, query *query.Builder) ([]*MessageIncoming, error) {
 	for {
 		maxMsg, err := acquireMaxFromSemaphore(ctx, c.sem, int64(c.cfg.MaxParallelMessages))
 		if err != nil {
@@ -497,7 +498,7 @@ type pgMessage struct {
 	LockedUntil pgtype.Timestamptz
 }
 
-func (c *Consumer) tryConsumeMessages(ctx context.Context, query *QueryBuilder, limit int64) (_ []*MessageIncoming, err error) {
+func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder, limit int64) (_ []*MessageIncoming, err error) {
 	tx, err := c.db.BeginTxx(ctx, nil)
 	if err != nil {
 		// TODO not necessary fatal, network could wiggle.

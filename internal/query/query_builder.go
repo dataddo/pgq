@@ -1,4 +1,4 @@
-package pgq
+package query
 
 import (
 	"fmt"
@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-type QueryBuilder struct {
+type Builder struct {
 	query  strings.Builder
 	params []string
 }
 
-func NewQueryBuilder() *QueryBuilder {
-	return &QueryBuilder{}
+func NewBuilder() *Builder {
+	return &Builder{}
 }
 
-func (qb *QueryBuilder) WriteString(part string) {
+func (qb *Builder) WriteString(part string) {
 	params := getParams(part)
 
 	qb.params = append(qb.params, params...)
@@ -23,8 +23,8 @@ func (qb *QueryBuilder) WriteString(part string) {
 	qb.query.WriteString(part)
 }
 
-// HasParam checks whether the QueryBuilder has a parameter of the given name.
-func (qb *QueryBuilder) HasParam(name string) bool {
+// HasParam checks whether the Builder has a parameter of the given name.
+func (qb *Builder) HasParam(name string) bool {
 	for _, paramName := range qb.params {
 		if paramName == name {
 			return true
@@ -33,11 +33,11 @@ func (qb *QueryBuilder) HasParam(name string) bool {
 	return false
 }
 
-func (qb *QueryBuilder) String() string {
+func (qb *Builder) String() string {
 	return qb.query.String()
 }
 
-func (qb *QueryBuilder) Build(params map[string]interface{}) (string, error) {
+func (qb *Builder) Build(params map[string]interface{}) (string, error) {
 	// Validate that the params map includes all parameter names from qb.params
 	for _, paramName := range qb.params {
 		if _, exists := params[paramName]; !exists {
