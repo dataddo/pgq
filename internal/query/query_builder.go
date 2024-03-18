@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Builder is a helper for building SQL queries with named parameters (jmoiron/sqlx and psql style for the moment)
 type Builder struct {
 	query  strings.Builder
 	params []string
@@ -15,6 +16,7 @@ func NewBuilder() *Builder {
 	return &Builder{}
 }
 
+// WriteString appends the provided string to the query and extracts any parameters from it.
 func (qb *Builder) WriteString(part string) {
 	params := getParams(part)
 
@@ -37,6 +39,7 @@ func (qb *Builder) String() string {
 	return qb.query.String()
 }
 
+// Build returns the query string with the parameters replaced by the values from the provided map.
 func (qb *Builder) Build(params map[string]interface{}) (string, error) {
 	// Validate that the params map includes all parameter names from qb.params
 	for _, paramName := range qb.params {
