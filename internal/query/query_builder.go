@@ -12,6 +12,10 @@ type Builder struct {
 	params []string
 }
 
+var (
+	tagRe = regexp.MustCompile(`:{1,2}(\w+)`)
+)
+
 func NewBuilder() *Builder {
 	return &Builder{}
 }
@@ -55,8 +59,8 @@ func (qb *Builder) Build(params map[string]interface{}) (string, error) {
 
 // getParams extracts tags formatted as :tagName from the provided line, ignoring type casting patterns like ::interval.
 func getParams(line string) []string {
-	re := regexp.MustCompile(`:{1,2}(\w+)`)
-	matches := re.FindAllStringSubmatch(line, -1)
+
+	matches := tagRe.FindAllStringSubmatch(line, -1)
 	if matches == nil {
 		return nil
 	}
