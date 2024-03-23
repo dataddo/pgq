@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"math"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgtype"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"go.dataddo.com/pgq/internal/pg"
+	"go.dataddo.com/pgq/internal/query"
 )
 
 type fatalError struct {
@@ -99,6 +100,8 @@ type consumerConfig struct {
 	// MsgProcessingReserveDuration is the duration for which the message is reserved for handling result state.
 	MessageProcessingReserveDuration time.Duration
 
+	MetadataFilters []MetadataFilter
+
 	Logger *slog.Logger
 }
 
@@ -129,7 +132,7 @@ type InvalidMessage struct {
 
 // Consumer is the preconfigured subscriber of the write input messages
 type Consumer struct {
-	db        *sql.DB
+	db        *sqlx.DB
 	queueName string
 	cfg       consumerConfig
 	handler   MessageHandler
@@ -220,8 +223,35 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 	}
 }
 
+// MetadataFilter is a filter for metadata. Right now support only direct matching of key/value
+type (
+	MetadataOperation string
+
+	MetadataFilter struct {
+		Key       string
+		Operation MetadataOperation
+		Value     string
+	}
+)
+
+const (
+	OpEqual    MetadataOperation = "="
+	OpNotEqual MetadataOperation = "<>"
+)
+
+func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
+	return func(c *consumerConfig) {
+		filters := c.MetadataFilters
+		if filter == nil {
+			filters = make([]MetadataFilter, 0, 1)
+		}
+
+		c.MetadataFilters = append(filters, *filter)
+	}
+}
+
 // NewConsumer creates Consumer with proper settings
-func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
+func NewConsumer(db *sqlx.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
 	for _, opt := range opts {
 		opt(&config)
@@ -277,7 +307,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 	if err := c.verifyTable(ctx); err != nil {
 		return errors.Wrap(err, "verifying table")
 	}
-	query := c.generateQuery()
+	query, err := c.generateQuery()
+	if err != nil {
+		return errors.Wrap(err, "generating query")
+	}
+
 	var wg sync.WaitGroup
 	defer wg.Wait() // wait for handlers to finish
 	for {
@@ -318,34 +352,47 @@ func (c *Consumer) verifyTable(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) generateQuery() string {
-	var sb strings.Builder
-	sb.WriteString(`UPDATE `)
-	sb.WriteString(pg.QuoteIdentifier(c.queueName))
-	sb.WriteString(` SET locked_until = $1`)
-	sb.WriteString(`, started_at = CURRENT_TIMESTAMP`)
-	sb.WriteString(`, consumed_count = consumed_count+1`)
-	sb.WriteString(` WHERE id IN (`)
+func (c *Consumer) generateQuery() (*query.Builder, error) {
+	qb := query.NewBuilder()
+
+	qb.WriteString(`UPDATE `)
+	qb.WriteString(pg.QuoteIdentifier(c.queueName))
+	qb.WriteString(` SET locked_until = :locked_until`)
+	qb.WriteString(`, started_at = CURRENT_TIMESTAMP`)
+	qb.WriteString(`, consumed_count = consumed_count+1`)
+	qb.WriteString(` WHERE id IN (`)
 	{
-		sb.WriteString(`SELECT id FROM `)
-		sb.WriteString(pg.QuoteIdentifier(c.queueName))
-		sb.WriteString(` WHERE`)
+		qb.WriteString(`SELECT id FROM `)
+		qb.WriteString(pg.QuoteIdentifier(c.queueName))
+		qb.WriteString(` WHERE`)
 		if c.cfg.HistoryLimit > 0 {
-			sb.WriteString(` created_at >= CURRENT_TIMESTAMP - $3::interval AND`)
-			sb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
+			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND`)
+			qb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
-		sb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
+		qb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
 		if c.cfg.MaxConsumeCount > 0 {
-			sb.WriteString(` AND consumed_count < `)
-			sb.WriteString(strconv.FormatUint(uint64(c.cfg.MaxConsumeCount), 10))
+			qb.WriteString(` AND consumed_count < :max_consume_count`)
 		}
-		sb.WriteString(` AND processed_at IS NULL`)
-		sb.WriteString(` ORDER BY consumed_count ASC, created_at ASC`)
-		sb.WriteString(` LIMIT $2`)
-		sb.WriteString(` FOR UPDATE SKIP LOCKED`)
+
+		if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
+			for i, filter := range c.cfg.MetadataFilters {
+				if len(filter.Operation) == 0 {
+					return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
+				}
+
+				fmt.Printf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i)
+				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
+			}
+		}
+
+		qb.WriteString(` AND processed_at IS NULL`)
+		qb.WriteString(` ORDER BY consumed_count ASC, created_at ASC`)
+		qb.WriteString(` LIMIT :limit`)
+		qb.WriteString(` FOR UPDATE SKIP LOCKED`)
 	}
-	sb.WriteString(`) RETURNING id, payload, metadata, consumed_count, locked_until`)
-	return sb.String()
+	qb.WriteString(`) RETURNING id, payload, metadata, consumed_count, locked_until`)
+
+	return qb, nil
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {
@@ -418,7 +465,7 @@ func prepareCtxTimeout() (func(td time.Duration) context.Context, context.Cancel
 	return fn, cancel
 }
 
-func (c *Consumer) consumeMessages(ctx context.Context, query string) ([]*MessageIncoming, error) {
+func (c *Consumer) consumeMessages(ctx context.Context, query *query.Builder) ([]*MessageIncoming, error) {
 	for {
 		maxMsg, err := acquireMaxFromSemaphore(ctx, c.sem, int64(c.cfg.MaxParallelMessages))
 		if err != nil {
@@ -451,8 +498,8 @@ type pgMessage struct {
 	LockedUntil pgtype.Timestamptz
 }
 
-func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit int64) (_ []*MessageIncoming, err error) {
-	tx, err := c.db.BeginTx(ctx, nil)
+func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder, limit int64) (_ []*MessageIncoming, err error) {
+	tx, err := c.db.BeginTxx(ctx, nil)
 	if err != nil {
 		// TODO not necessary fatal, network could wiggle.
 		return nil, fatalError{Err: errors.WithStack(err)}
@@ -472,14 +519,36 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit i
 	}()
 
 	lockedUntil := time.Now().Add(c.cfg.LockDuration)
-	args := []any{lockedUntil, limit}
-	if c.cfg.HistoryLimit > 0 {
+	namedParams := map[string]interface{}{
+		"locked_until": lockedUntil,
+		"limit":        limit,
+	}
+
+	if query.HasParam("history_limit") {
 		var scanInterval pgtype.Interval
 		// time.Duration doesn't ever fail
 		_ = scanInterval.Set(c.cfg.HistoryLimit)
-		args = append(args, scanInterval)
+
+		namedParams["history_limit"] = scanInterval
 	}
-	rows, err := tx.QueryContext(ctx, query, args...)
+
+	if query.HasParam("max_consume_count") {
+		namedParams["max_consume_count"] = c.cfg.MaxConsumeCount
+	}
+
+	if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
+		for i, filter := range c.cfg.MetadataFilters {
+			namedParams[fmt.Sprintf("metadata_key_%d", i)] = filter.Key
+			namedParams[fmt.Sprintf("metadata_value_%d", i)] = filter.Value
+		}
+	}
+
+	queryString, err := query.Build(namedParams)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	rows, err := sqlx.NamedQueryContext(ctx, tx, queryString, namedParams)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -505,7 +574,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query string, limit i
 	return msgs, nil
 }
 
-func (c *Consumer) parseRow(ctx context.Context, rows *sql.Rows) (*MessageIncoming, error) {
+func (c *Consumer) parseRow(ctx context.Context, rows *sqlx.Rows) (*MessageIncoming, error) {
 	var pgMsg pgMessage
 	if err := rows.Scan(
 		&pgMsg.ID,

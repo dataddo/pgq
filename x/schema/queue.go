@@ -24,6 +24,7 @@ func GenerateCreateTableQuery(queueName string) string {
 	);
 	CREATE INDEX IF NOT EXISTS "%[2]s_created_at_idx" ON %[1]s (created_at);
 	CREATE INDEX IF NOT EXISTS "%[2]s_processed_at_null_idx" ON %[1]s (processed_at) WHERE (processed_at IS NULL);
+	CREATE INDEX IF NOT EXISTS "%[2]s_metadata_idx" ON %[1]s USING GIN(metadata) WHERE processed_at IS NULL;
 	`, quotedTableName, quotedTableName[1:len(quotedTableName)-1])
 }
 

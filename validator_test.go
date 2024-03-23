@@ -3,7 +3,6 @@ package pgq
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"go.dataddo.com/pgq/internal/require"
 
 	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/jmoiron/sqlx"
 )
 
 func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
@@ -141,12 +141,12 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 
 // TODO: This was recovered from the consumer_test.go file. We can make a common testing package and add all these common
 // functionalities will be included
-func openDB(t *testing.T) *sql.DB {
+func openDB(t *testing.T) *sqlx.DB {
 	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
 	if !ok {
 		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
 	}
-	db, err := sql.Open("pgx", dsn)
+	db, err := sqlx.Open("pgx", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := db.Close()
@@ -156,7 +156,7 @@ func openDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func ensureUUIDExtension(t *testing.T, db *sql.DB) {
+func ensureUUIDExtension(t *testing.T, db *sqlx.DB) {
 	_, err := db.Exec(`
 		DO $$ 
 		BEGIN

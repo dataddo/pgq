@@ -2,8 +2,8 @@ package pgq
 
 import (
 	"context"
-	"database/sql"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
 
@@ -51,7 +51,7 @@ var mandatoryIndexes = []string{
 }
 
 // ValidateFields checks if required fields exist
-func ValidateFields(ctx context.Context, db *sql.DB, queueName string) error {
+func ValidateFields(ctx context.Context, db *sqlx.DB, queueName string) error {
 	// --- (1) ----
 	// Recover the columns that the queue has
 	columns, err := getColumnData(ctx, db, queueName)
@@ -87,7 +87,7 @@ func ValidateFields(ctx context.Context, db *sql.DB, queueName string) error {
 }
 
 // ValidateIndexes checks if required indexes exist
-func ValidateIndexes(ctx context.Context, db *sql.DB, queueName string) error {
+func ValidateIndexes(ctx context.Context, db *sqlx.DB, queueName string) error {
 	found, err := checkIndexData(ctx, db, queueName)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func ValidateIndexes(ctx context.Context, db *sql.DB, queueName string) error {
 	return nil
 }
 
-func getColumnData(ctx context.Context, db *sql.DB, queueName string) (map[string]struct{}, error) {
+func getColumnData(ctx context.Context, db *sqlx.DB, queueName string) (map[string]struct{}, error) {
 	rows, err := db.QueryContext(ctx, columnSelect, queueName)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying schema of queue table")
@@ -121,7 +121,7 @@ func getColumnData(ctx context.Context, db *sql.DB, queueName string) (map[strin
 	return columns, nil
 }
 
-func checkIndexData(ctx context.Context, db *sql.DB, queueName string) (bool, error) {
+func checkIndexData(ctx context.Context, db *sqlx.DB, queueName string) (bool, error) {
 	rows, err := db.QueryContext(ctx, indexSelect, queueName, mandatoryIndexes)
 	if err != nil {
 		return false, errors.Wrap(err, "querying index schema of queue table")
