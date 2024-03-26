@@ -2,6 +2,7 @@ package pgq_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/jmoiron/sqlx"
 	"go.dataddo.com/pgq"
 )
 
@@ -48,7 +48,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *pgq.MessageIncoming) (
 }
 
 func ExampleConsumer() {
-	db, err := sqlx.Open("postgres", "user=postgres password=postgres host=localhost port=5432 dbname=postgres")
+	db, err := sql.Open("postgres", "user=postgres password=postgres host=localhost port=5432 dbname=postgres")
 	if err != nil {
 		log.Fatal("Error opening database:", err)
 	}

@@ -51,7 +51,12 @@ func StaticMetaInjector(m Metadata) func(context.Context, Metadata) {
 }
 
 // NewPublisher initializes the publisher with given *sql.DB client.
-func NewPublisher(db *sqlx.DB, opts ...PublisherOption) Publisher {
+func NewPublisher(db *sql.DB, opts ...PublisherOption) Publisher {
+	return NewPublisherExt(sqlx.NewDb(db, "pgx"), opts...)
+}
+
+// NewPublisher initializes the publisher with given *sqlx.DB client
+func NewPublisherExt(db *sqlx.DB, opts ...PublisherOption) Publisher {
 	cfg := publisherConfig{}
 	for _, opt := range opts {
 		opt(&cfg)

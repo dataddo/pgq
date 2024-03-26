@@ -251,7 +251,12 @@ func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
 }
 
 // NewConsumer creates Consumer with proper settings
-func NewConsumer(db *sqlx.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
+func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
+	return NewConsumerExt(sqlx.NewDb(db, "pgx"), queueName, handler, opts...)
+}
+
+// NewConsumer creates Consumer with proper settings, using sqlx.DB (until refactored to use pgx directly)
+func NewConsumerExt(db *sqlx.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
 	for _, opt := range opts {
 		opt(&config)

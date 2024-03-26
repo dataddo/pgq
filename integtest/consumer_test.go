@@ -11,7 +11,6 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v4/stdlib"
-	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/otel/metric/noop"
 
 	. "go.dataddo.com/pgq"
@@ -244,12 +243,12 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 
 }
 
-func openDB(t *testing.T) *sqlx.DB {
+func openDB(t *testing.T) *sql.DB {
 	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
 	if !ok {
 		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
 	}
-	db, err := sqlx.Open("pgx", dsn)
+	db, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := db.Close()
@@ -259,7 +258,7 @@ func openDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
-func ensureUUIDExtension(t *testing.T, db *sqlx.DB) {
+func ensureUUIDExtension(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`
 		DO $$ 
 		BEGIN
