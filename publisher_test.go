@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"go.dataddo.com/pgq/internal/require"
 )
@@ -24,7 +25,7 @@ func Test_buildInsertQuery(t *testing.T) {
 				queue:    "queue",
 				msgCount: 1,
 			},
-			want: `INSERT INTO "queue" (payload, metadata) VALUES ($1,$2) RETURNING "id"`,
+			want: `INSERT INTO "queue" (scheduled_for, payload, metadata) VALUES ($1,$2,$3) RETURNING "id"`,
 		},
 		{
 			name: "multiple messages",
@@ -32,7 +33,7 @@ func Test_buildInsertQuery(t *testing.T) {
 				queue:    "queue",
 				msgCount: 3,
 			},
-			want: `INSERT INTO "queue" (payload, metadata) VALUES ($1,$2),($3,$4),($5,$6) RETURNING "id"`,
+			want: `INSERT INTO "queue" (scheduled_for, payload, metadata) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9) RETURNING "id"`,
 		},
 	}
 	for _, tt := range tests {
@@ -45,6 +46,8 @@ func Test_buildInsertQuery(t *testing.T) {
 }
 
 func TestClient_buildArgs(t *testing.T) {
+	var ScheduledForTime time.Time
+
 	type args struct {
 		ctx  context.Context
 		msgs []*MessageOutgoing
@@ -59,10 +62,11 @@ func TestClient_buildArgs(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				msgs: []*MessageOutgoing{
-					{Metadata: Metadata{}, Payload: nil},
+					{ScheduledFor: &ScheduledForTime, Metadata: Metadata{}, Payload: nil},
 				},
 			},
 			want: []any{
+				&ScheduledForTime,
 				json.RawMessage(nil),
 				Metadata{
 					"foo": "bar",
@@ -74,10 +78,11 @@ func TestClient_buildArgs(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				msgs: []*MessageOutgoing{
-					{Metadata: Metadata{}, Payload: nil},
+					{ScheduledFor: &ScheduledForTime, Metadata: Metadata{}, Payload: nil},
 				},
 			},
 			want: []any{
+				&ScheduledForTime,
 				json.RawMessage(nil),
 				Metadata{
 					"foo": "bar",

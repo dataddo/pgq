@@ -3,6 +3,9 @@ package pgq
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +15,28 @@ import (
 
 // Metadata is message Metadata definition.
 type Metadata map[string]string
+
+var (
+	fieldCountPerMessageOutgoing int
+	dbFieldsPerMessageOutgoing   []string
+	dbFieldsString               string
+)
+
+func init() {
+	var err error
+
+	// Count fields in MessageOutgoing struct. Used for dynamically building the queries
+	t := reflect.TypeOf(MessageOutgoing{})
+	fieldCountPerMessageOutgoing = t.NumField()
+
+	// Get field names in MessageOutgoing struct. Used for dynamically building the queries
+	dbFieldsPerMessageOutgoing, err = buildColumnListFromTags(MessageOutgoing{})
+	if err != nil {
+		panic(err)
+	}
+
+	dbFieldsString = strings.Join(dbFieldsPerMessageOutgoing, ", ")
+}
 
 // NewMessage creates new message that satisfies Message interface.
 func NewMessage(meta Metadata, payload json.RawMessage, attempt int, maxConsumedCount uint) *MessageIncoming {
@@ -25,10 +50,13 @@ func NewMessage(meta Metadata, payload json.RawMessage, attempt int, maxConsumed
 
 // MessageOutgoing is a record to be inserted into table queue in Postgres
 type MessageOutgoing struct {
-	// Metadata contains the message Metadata.
-	Metadata Metadata
+	// ScheduledFor is the time when the message should be processed. If nil, the messages
+	// gets processed immediately.
+	ScheduledFor *time.Time `db:"scheduled_for"`
 	// Payload is the message's Payload.
-	Payload json.RawMessage
+	Payload json.RawMessage `db:"payload"`
+	// Metadata contains the message Metadata.
+	Metadata Metadata `db:"metadata"`
 }
 
 // MessageIncoming is a record retrieved from table queue in Postgres
@@ -97,4 +125,25 @@ func (m *MessageIncoming) discard(ctx context.Context, reason string) error {
 		err = m.discardFn(ctx, reason)
 	})
 	return err
+}
+
+// buildColumnListFromTags dynamically constructs a list of column names based on the `db` struct tags
+// of any given struct. It returns a slice of strings containing the column names.
+func buildColumnListFromTags(data interface{}) ([]string, error) {
+	// Ensure that 'data' is a struct
+	t := reflect.TypeOf(data)
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("provided argument is not a struct")
+	}
+
+	var columns []string
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		dbTag := field.Tag.Get("db") // Get the value of the `db` tag
+		if dbTag != "" {
+			columns = append(columns, dbTag)
+		}
+	}
+
+	return columns, nil
 }
