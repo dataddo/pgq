@@ -89,6 +89,84 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	require.Equal(t, 1, processedCount)
 }
 
+func TestConsumer_Run_FutureMessage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+
+	db := openDB(t)
+	queueName := t.Name()
+	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	t.Cleanup(func() {
+		db := openDB(t)
+		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		require.NoError(t, err)
+		err = db.Close()
+		require.NoError(t, err)
+	})
+	require.NoError(t, err)
+	publisher := NewPublisher(db)
+
+	scheduledFor := time.Now().Add(time.Hour)
+	msgIDs, err := publisher.Publish(ctx, queueName,
+		&MessageOutgoing{Payload: json.RawMessage(`{"baz":"queex"}`), ScheduledFor: &scheduledFor},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(msgIDs))
+
+	scheduledFor = time.Now().Add(-1 * time.Hour)
+	simpleMsgIDs, err := publisher.Publish(ctx, queueName,
+		&MessageOutgoing{Payload: json.RawMessage(`{"foo":"bar"}`), ScheduledFor: &scheduledFor},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(simpleMsgIDs))
+
+	// consumer
+	handler := &regularHandler{}
+	consumer, err := NewConsumer(db, queueName, handler,
+		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithLockDuration(time.Hour),
+		WithPollingInterval(time.Second),
+		WithMaxParallelMessages(1),
+		WithInvalidMessageCallback(func(_ context.Context, _ InvalidMessage, err error) {
+			require.NoError(t, err)
+		}),
+		WithMetrics(noop.Meter{}),
+	)
+	require.NoError(t, err)
+
+	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer consumeCancel()
+	err = consumer.Run(consumeCtx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	err = db.Close()
+	require.NoError(t, err)
+
+	// evaluate
+	query := fmt.Sprintf(
+		`SELECT count(1) FROM %s WHERE processed_at is null`,
+		pg.QuoteIdentifier(queueName),
+	)
+	db = openDB(t)
+	t.Cleanup(func() {
+		err := db.Close()
+		require.NoError(t, err)
+	})
+	row := db.QueryRowContext(ctx, query)
+	var (
+		msgCount int
+	)
+	err = row.Scan(&msgCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, msgCount)
+
+}
+
 func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
