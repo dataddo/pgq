@@ -380,7 +380,6 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 					return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
 				}
 
-				fmt.Printf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i)
 				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
 			}
 		}
