@@ -325,7 +325,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if errors.As(err, &fatalError{}) {
 				return errors.Wrapf(err, "consuming from PostgreSQL queue %s", c.queueName)
 			}
-			c.cfg.Logger.InfoContext(ctx, "pgq: consume failed, will retry")
+			c.cfg.Logger.InfoContext(ctx, "pgq: consume failed, will retry",
+				"error", err,
+			)
 			continue
 		}
 		wg.Add(len(msgs))
@@ -556,6 +558,9 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 
 	rows, err := sqlx.NamedQueryContext(ctx, tx, queryString, namedParams)
 	if err != nil {
+		if isErrorCode(err, undefinedColumnErrCode) {
+			return nil, fatalError{Err: err}
+		}
 		return nil, errors.WithStack(err)
 	}
 	defer rows.Close()
