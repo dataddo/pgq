@@ -34,7 +34,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithHistoryLimit(12 * time.Hour),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "consume messages with metadata filter",
@@ -56,7 +56,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithMaxConsumeCount(0),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "with metadata condition",
@@ -71,7 +71,7 @@ func TestConsumer_generateQuery(t *testing.T) {
 					WithHistoryLimit(12 * time.Hour),
 				},
 			},
-			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
+			want: "UPDATE \"testing_queue\" SET locked_until = :locked_until, started_at = CURRENT_TIMESTAMP, consumed_count = consumed_count+1 WHERE id IN (SELECT id FROM \"testing_queue\" WHERE created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND created_at < CURRENT_TIMESTAMP AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP) AND consumed_count < :max_consume_count AND processed_at IS NULL AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP) ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED) RETURNING id, payload, metadata, consumed_count, locked_until",
 		},
 		{
 			name: "with negative metadata condition",

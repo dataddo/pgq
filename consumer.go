@@ -373,7 +373,7 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 		qb.WriteString(pg.QuoteIdentifier(c.queueName))
 		qb.WriteString(` WHERE`)
 		if c.cfg.HistoryLimit > 0 {
-			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND`)
+			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND`)
 			qb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
 		qb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
