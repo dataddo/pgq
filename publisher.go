@@ -9,13 +9,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgtype"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 
 	"go.dataddo.com/pgq/internal/pg"
 )
 
 type publisher struct {
-	db  *sql.DB
+	db  *sqlx.DB
 	cfg publisherConfig
 }
 
@@ -50,7 +51,7 @@ func StaticMetaInjector(m Metadata) func(context.Context, Metadata) {
 }
 
 // NewPublisher initializes the publisher with given *sql.DB client.
-func NewPublisher(db *sql.DB, opts ...PublisherOption) Publisher {
+func NewPublisher(db *sqlx.DB, opts ...PublisherOption) Publisher {
 	cfg := publisherConfig{}
 	for _, opt := range opts {
 		opt(&cfg)

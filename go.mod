@@ -5,6 +5,8 @@ go 1.21
 require (
 	github.com/google/uuid v1.5.0
 	github.com/jackc/pgtype v1.14.1
+	github.com/jmoiron/sqlx v1.3.5
+	github.com/lib/pq v1.10.2
 	github.com/pkg/errors v0.9.1
 	go.opentelemetry.io/otel v1.21.0
 	go.opentelemetry.io/otel/metric v1.21.0
