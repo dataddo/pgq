@@ -16,6 +16,7 @@ func GenerateCreateTableQuery(queueName string) string {
 		created_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		started_at     TIMESTAMPTZ                           NULL,
 		locked_until   TIMESTAMPTZ                           NULL,
+		scheduled_for	 TIMESTAMPTZ                           NULL,
 		processed_at   TIMESTAMPTZ                           NULL,
 		consumed_count INTEGER     DEFAULT 0                 NOT NULL,
 		error_detail   TEXT                                  NULL,
@@ -24,6 +25,7 @@ func GenerateCreateTableQuery(queueName string) string {
 	);
 	CREATE INDEX IF NOT EXISTS "%[2]s_created_at_idx" ON %[1]s (created_at);
 	CREATE INDEX IF NOT EXISTS "%[2]s_processed_at_null_idx" ON %[1]s (processed_at) WHERE (processed_at IS NULL);
+	CREATE INDEX IF NOT EXISTS "%[2]s_scheduled_for_idx" ON %[1]s (scheduled_for ASC NULLS LAST) WHERE (processed_at IS NULL);
 	CREATE INDEX IF NOT EXISTS "%[2]s_metadata_idx" ON %[1]s USING GIN(metadata) WHERE processed_at IS NULL;
 	`, quotedTableName, quotedTableName[1:len(quotedTableName)-1])
 }

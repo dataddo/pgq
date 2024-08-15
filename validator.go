@@ -37,6 +37,7 @@ var mandatoryFields = []string{
 	"id",
 	"locked_until",
 	"processed_at",
+	"scheduled_for",
 	"consumed_count",
 	"started_at",
 	"payload",

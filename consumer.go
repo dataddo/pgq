@@ -325,7 +325,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if errors.As(err, &fatalError{}) {
 				return errors.Wrapf(err, "consuming from PostgreSQL queue %s", c.queueName)
 			}
-			c.cfg.Logger.InfoContext(ctx, "pgq: consume failed, will retry")
+			c.cfg.Logger.InfoContext(ctx, "pgq: consume failed, will retry",
+				"error", err,
+			)
 			continue
 		}
 		wg.Add(len(msgs))
@@ -371,7 +373,7 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 		qb.WriteString(pg.QuoteIdentifier(c.queueName))
 		qb.WriteString(` WHERE`)
 		if c.cfg.HistoryLimit > 0 {
-			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - (:history_limit)::interval AND`)
+			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND`)
 			qb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
 		qb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
@@ -390,7 +392,9 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 		}
 
 		qb.WriteString(` AND processed_at IS NULL`)
-		qb.WriteString(` ORDER BY consumed_count ASC, created_at ASC`)
+		qb.WriteString(` AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP)`)
+		// prioritize scheduled messages and messages with lower consumed_count
+		qb.WriteString(` ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC`)
 		qb.WriteString(` LIMIT :limit`)
 		qb.WriteString(` FOR UPDATE SKIP LOCKED`)
 	}
@@ -554,6 +558,9 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 
 	rows, err := sqlx.NamedQueryContext(ctx, tx, queryString, namedParams)
 	if err != nil {
+		if isErrorCode(err, undefinedColumnErrCode) {
+			return nil, fatalError{Err: err}
+		}
 		return nil, errors.WithStack(err)
 	}
 	defer rows.Close()

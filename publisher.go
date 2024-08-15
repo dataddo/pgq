@@ -118,13 +118,17 @@ func buildInsertQuery(queue string, msgCount int) string {
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO ")
 	sb.WriteString(pg.QuoteIdentifier(queue))
-	sb.WriteString(" (payload, metadata) VALUES ")
+	sb.WriteString(" (")
+	sb.WriteString(dbFieldsString)
+	sb.WriteString(") VALUES ")
 	var params pg.StmtParams
 	for rowIdx := 0; rowIdx < msgCount; rowIdx++ {
 		if rowIdx != 0 {
 			sb.WriteString(",")
 		}
 		sb.WriteString("(")
+		sb.WriteString(params.Next())
+		sb.WriteString(",")
 		sb.WriteString(params.Next())
 		sb.WriteString(",")
 		sb.WriteString(params.Next())
@@ -135,12 +139,12 @@ func buildInsertQuery(queue string, msgCount int) string {
 }
 
 func (d *publisher) buildArgs(ctx context.Context, msgs []*MessageOutgoing) []any {
-	args := make([]any, 0, len(msgs)*2)
+	args := make([]any, 0, len(msgs)*fieldCountPerMessageOutgoing)
 	for _, msg := range msgs {
 		for _, injector := range d.cfg.metaInjectors {
 			injector(ctx, msg.Metadata)
 		}
-		args = append(args, msg.Payload, msg.Metadata)
+		args = append(args, msg.ScheduledFor, msg.Payload, msg.Metadata)
 	}
 	return args
 }
