@@ -21,8 +21,10 @@ func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 
 	// Create the new queue
 	_, err := db.ExecContext(ctx, generateCreateTableQuery(queueName))
@@ -42,8 +44,10 @@ func TestValidator_ValidateFieldsCorrectSchemaPartitionedTable(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 
 	// Create the new queue
 	_, err := db.ExecContext(ctx, generateCreateTablePartitionedQuery(queueName))
@@ -63,8 +67,10 @@ func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
-
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 	// Create the new incorrect queue
 	_, err := db.ExecContext(ctx, generateInvalidQueueQuery(queueName))
 	require.NoError(t, err)
@@ -83,8 +89,10 @@ func TestValidator_ValidateIndexesCorrectSchema(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 
 	// Create the new queue
 	_, err := db.ExecContext(ctx, generateCreateTableQuery(queueName))
@@ -104,9 +112,10 @@ func TestValidator_ValidateIndexesCorrectSchema_CompositeIndexes(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
-
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 	// Create the new queue
 	_, err := db.ExecContext(ctx, generateCreateTableQueryCompositeIndex(queueName))
 	require.NoError(t, err)
@@ -125,8 +134,10 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
-	defer db.ExecContext(ctx, generateDropTableQuery(queueName))
-
+	t.Cleanup(func() {
+		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		require.NoError(t, err)
+	})
 	// Create the new incorrect queue
 	_, err := db.ExecContext(ctx, generateInvalidQueueQuery(queueName))
 	require.NoError(t, err)

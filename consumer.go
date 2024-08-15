@@ -381,14 +381,12 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 			qb.WriteString(` AND consumed_count < :max_consume_count`)
 		}
 
-		if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
-			for i, filter := range c.cfg.MetadataFilters {
-				if len(filter.Operation) == 0 {
-					return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
-				}
-
-				qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
+		for i, filter := range c.cfg.MetadataFilters {
+			if len(filter.Operation) == 0 {
+				return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
 			}
+
+			qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
 		}
 
 		qb.WriteString(` AND processed_at IS NULL`)
@@ -467,7 +465,7 @@ func prepareCtxTimeout() (func(td time.Duration) context.Context, context.Cancel
 	parent, cancel := context.WithCancel(context.Background())
 	fn := func(td time.Duration) context.Context {
 		// ctx will be released by parent cancellation
-		ctx, _ := context.WithTimeout(parent, td)
+		ctx, _ := context.WithTimeout(parent, td) //nolint:govet
 		return ctx
 	}
 	return fn, cancel
@@ -544,11 +542,9 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 		namedParams["max_consume_count"] = c.cfg.MaxConsumeCount
 	}
 
-	if c.cfg.MetadataFilters != nil && len(c.cfg.MetadataFilters) > 0 {
-		for i, filter := range c.cfg.MetadataFilters {
-			namedParams[fmt.Sprintf("metadata_key_%d", i)] = filter.Key
-			namedParams[fmt.Sprintf("metadata_value_%d", i)] = filter.Value
-		}
+	for i, filter := range c.cfg.MetadataFilters {
+		namedParams[fmt.Sprintf("metadata_key_%d", i)] = filter.Key
+		namedParams[fmt.Sprintf("metadata_value_%d", i)] = filter.Value
 	}
 
 	queryString, err := query.Build(namedParams)

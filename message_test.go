@@ -1,25 +1,13 @@
 package pgq
 
 import (
-	"context"
-	"encoding/json"
-	"sync"
 	"testing"
-
-	"github.com/google/uuid"
 )
 
 func TestMessageIncoming_LastAttempt(t *testing.T) {
 	type fields struct {
-		id               uuid.UUID
-		Metadata         Metadata
-		Payload          json.RawMessage
 		Attempt          int
 		maxConsumedCount uint
-		once             sync.Once
-		ackFn            func(ctx context.Context) error
-		nackFn           func(context.Context, string) error
-		discardFn        func(context.Context, string) error
 	}
 	tests := []struct {
 		name   string
@@ -61,15 +49,8 @@ func TestMessageIncoming_LastAttempt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &MessageIncoming{
-				id:               tt.fields.id,
-				Metadata:         tt.fields.Metadata,
-				Payload:          tt.fields.Payload,
 				Attempt:          tt.fields.Attempt,
 				maxConsumedCount: tt.fields.maxConsumedCount,
-				once:             tt.fields.once,
-				ackFn:            tt.fields.ackFn,
-				nackFn:           tt.fields.nackFn,
-				discardFn:        tt.fields.discardFn,
 			}
 			if got := m.LastAttempt(); got != tt.want {
 				t.Errorf("LastAttempt() = %v, want %v", got, tt.want)

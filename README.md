@@ -391,3 +391,22 @@ SET infinite_time_partitions = true,
     retention_keep_index = false
 WHERE parent_table = 'my_queue_name';
 ```
+
+## Contribution
+
+We are open to any contribution to the pgq package, but since we use it in our production environment, we have to be very careful about the changes.
+We don't need to add any new features, but we are open to any bug fixes, performance improvements, and documentation enhancements.
+
+### Run integration tests
+
+The unit tests will run without any additional setup, but the integration tests require the running postgres instance, otherwise are skipped. 
+
+In one shell start the postgres docker container:
+```shell
+docker run --rm -it -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15-alpine
+```
+
+In another shell run the tests:
+```shell
+TEST_POSTGRES_DSN=postgres://postgres:postgres@localhost:5432/postgres go test ./...
+```
