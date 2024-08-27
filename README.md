@@ -15,6 +15,7 @@ but simple message queues for their services composed architecture using the fam
 - __Transactional__: Supports transactional message handling, ensuring consistency.
 - __Simple usage__: Provides a clean and easy-to-use API for interacting with the queue.
 - __Efficient__: Optimized for medium to long jobs durations.
+- __Scheduled Messages__: Schedule messages to be processed at a specific future time.
 
 ## Why PGQ?
 - __Postgres__: The `postgres` just works and is feature rich, scalable and performant.
@@ -42,6 +43,8 @@ Pick pgq if you:
 - want to use SQL for managing your queues
 - already use `postgres` and you want to keep your tech stack simple
 - don't want to manage another technology and learn its specifics
+- need to schedule messages to be processed at a specific time
+
 
 No need to bring the new technology to your existing stack when you can be pretty satisfied with `postgres`.
 Write the consumers and publishers in various languages with the simple idea behind - __use postgres table as a queue__.
@@ -236,6 +239,7 @@ You can configure the consumer by passing the optional `ConsumeOptions` when cre
 | WithInvalidMessageCallback         | Handle the invalid messages which may appear in the queue. You may re-publish it to some junk queue etc.                                                                                                                                                                                |
 | WithHistoryLimit         | how far in the history you want to search for messages in the queue. Sometimes you want to ignore messages created days ago even though the are unprocessed.                                                                                                                            |
 | WithMetrics         | No problem to attach your own metrics provider (prometheus, ...) here.                                                                                                                                                                                                                  |
+| WithMetadataFilter  | Allows to filter consumed message. At this point OpEqual and OpNotEqual are supported              |
 
 ```go
 consumer, err := NewConsumer(db, queueName, handler,
@@ -261,6 +265,7 @@ The message struct matches the postgres table schema. You can modify the table s
 | `metadata`       | User's custom metadata about the message in JSON format so your `payload` remains cleansed from unnecessary data. This is the good place where to put information like the `publisher` app name, payload schema version, customer related information for easier debugging etc. |
 | `created_at`     | The timestamp when the record in db was created (message received to the queue).                                                                                                                                                                                                |
 | `started_at`     | Timestamp indicating when the consumer started to process the message.                                                                                                                                                                                                          |
+| `scheduled_for`  | Timestamp to delay message processing until a specific time. If NULL, the message is processed immediately.                                                                                                                                                                     |
 | `locked_until`   | Contains the consumer lock validity timestamp. If this field is set and has not expired yet, no other consumer can process the message.                                                                                                                                         |
 | `processed_at`   | Timestamp when the message was processed (either success or failure).                                                                                                                                                                                                           |
 | `error_detail`   | The reason why the processing of the message failed provided by the consumer. `NULL` means no error.                                                                                                                                                                            |
