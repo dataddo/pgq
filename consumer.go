@@ -102,6 +102,9 @@ type consumerConfig struct {
 
 	MetadataFilters []MetadataFilter
 
+	// InfiniteConsumption, when false it runs until no messages can be consumed
+	InfiniteConsumption bool
+
 	Logger *slog.Logger
 }
 
@@ -117,6 +120,7 @@ var defaultConsumerConfig = consumerConfig{
 	Metrics:                          noop.Meter{},
 	MaxConsumeCount:                  3,
 	Logger:                           noopLogger,
+	InfiniteConsumption:              true,
 }
 
 // InvalidMessageCallback defines what should happen to messages which are identified as invalid.
@@ -223,6 +227,13 @@ func WithLogger(logger *slog.Logger) ConsumerOption {
 	}
 }
 
+// WithInfiniteConsumption false sets whether the consumer should run until no messages can be consumed.
+func WithInfiniteConsumption(infiniteConsumption bool) ConsumerOption {
+	return func(c *consumerConfig) {
+		c.InfiniteConsumption = infiniteConsumption
+	}
+}
+
 // MetadataFilter is a filter for metadata. Right now support only direct matching of key/value
 type (
 	MetadataOperation string
@@ -322,6 +333,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 	for {
 		msgs, err := c.consumeMessages(ctx, query)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return io.EOF
+			}
 			if errors.As(err, &fatalError{}) {
 				return errors.Wrapf(err, "consuming from PostgreSQL queue %s", c.queueName)
 			}
@@ -480,6 +494,9 @@ func (c *Consumer) consumeMessages(ctx context.Context, query *query.Builder) ([
 		msgs, err := c.tryConsumeMessages(ctx, query, maxMsg)
 		if err != nil {
 			c.sem.Release(maxMsg)
+			if !c.cfg.InfiniteConsumption && errors.Is(err, sql.ErrNoRows) {
+				return nil, io.EOF
+			}
 			if !errors.Is(err, sql.ErrNoRows) {
 				return nil, errors.WithStack(err)
 			}
