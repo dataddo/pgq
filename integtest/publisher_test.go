@@ -55,15 +55,14 @@ func TestPublisher(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			db := openDB(t)
 			t.Cleanup(func() {
-				err := db.Close()
-				require.NoError(t, err)
+				db.Close()
 			})
 			queueName := t.Name()
-			_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
-			_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+			_, _ = db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
+			_, err := db.Exec(ctx, schema.GenerateCreateTableQuery(queueName))
 			require.NoError(t, err)
 			t.Cleanup(func() {
-				_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+				_, err := db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
 				require.NoError(t, err)
 			})
 			d := pgq.NewPublisher(db, tt.publisherOpts...)
@@ -74,7 +73,7 @@ func TestPublisher(t *testing.T) {
 			}
 			require.Equal(t, 1, len(msgIDs))
 			require.NoError(t, err)
-			row := db.QueryRowContext(ctx,
+			row := db.QueryRow(ctx,
 				fmt.Sprintf(
 					"SELECT id, metadata, payload FROM %s WHERE id = $1",
 					pgutils.QuoteIdentifier(queueName),

@@ -2,21 +2,21 @@ package pgq
 
 import (
 	"context"
-	"database/sql"
 	stderrors "errors"
 	"maps"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgtype"
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
 	"go.dataddo.com/pgq/internal/pg"
 )
 
 type publisher struct {
-	db  *sqlx.DB
+	db  *pgxpool.Pool
 	cfg publisherConfig
 }
 
@@ -50,13 +50,8 @@ func StaticMetaInjector(m Metadata) func(context.Context, Metadata) {
 	}
 }
 
-// NewPublisher initializes the publisher with given *sql.DB client.
-func NewPublisher(db *sql.DB, opts ...PublisherOption) Publisher {
-	return NewPublisherExt(sqlx.NewDb(db, "pgx"), opts...)
-}
-
-// NewPublisher initializes the publisher with given *sqlx.DB client
-func NewPublisherExt(db *sqlx.DB, opts ...PublisherOption) Publisher {
+// NewPublisher initializes the publisher with given *pgxpool.Pool client.
+func NewPublisher(db *pgxpool.Pool, opts ...PublisherOption) Publisher {
 	cfg := publisherConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -72,14 +67,14 @@ func (d *publisher) Publish(ctx context.Context, queue string, msgs ...*MessageO
 	query := buildInsertQuery(queue, len(msgs))
 	args := d.buildArgs(ctx, msgs)
 	// transaction is used to have secured read of query result.
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "couldn't start transaction")
 	}
 	defer func() {
 		r := recover()
-		rErr := tx.Rollback()
-		if rErr != nil && !errors.Is(rErr, sql.ErrTxDone) {
+		rErr := tx.Rollback(ctx)
+		if rErr != nil && !errors.Is(rErr, pgx.ErrTxClosed) {
 			if err != nil {
 				// this is tricky, but we want to return both errors
 				err = stderrors.Join(err, rErr)
@@ -92,7 +87,7 @@ func (d *publisher) Publish(ctx context.Context, queue string, msgs ...*MessageO
 		}
 	}()
 
-	rows, err := tx.QueryContext(ctx, query, args...)
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -108,7 +103,7 @@ func (d *publisher) Publish(ctx context.Context, queue string, msgs ...*MessageO
 	if err := rows.Err(); err != nil {
 		return nil, errors.WithStack(err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, errors.WithStack(err)
 	}
 	return ids, nil
@@ -144,7 +139,11 @@ func (d *publisher) buildArgs(ctx context.Context, msgs []*MessageOutgoing) []an
 		for _, injector := range d.cfg.metaInjectors {
 			injector(ctx, msg.Metadata)
 		}
-		args = append(args, msg.ScheduledFor, msg.Payload, msg.Metadata)
+		metadata := msg.Metadata
+		if metadata == nil {
+			metadata = make(Metadata)
+		}
+		args = append(args, msg.ScheduledFor, msg.Payload, metadata)
 	}
 	return args
 }

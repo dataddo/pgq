@@ -3,7 +3,6 @@ package pgq
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +15,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgtype"
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -132,7 +133,7 @@ type InvalidMessage struct {
 
 // Consumer is the preconfigured subscriber of the write input messages
 type Consumer struct {
-	db        *sqlx.DB
+	db        *pgxpool.Pool
 	queueName string
 	cfg       consumerConfig
 	handler   MessageHandler
@@ -251,12 +252,7 @@ func WithMetadataFilter(filter *MetadataFilter) ConsumerOption {
 }
 
 // NewConsumer creates Consumer with proper settings
-func NewConsumer(db *sql.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
-	return NewConsumerExt(sqlx.NewDb(db, "pgx"), queueName, handler, opts...)
-}
-
-// NewConsumer creates Consumer with proper settings, using sqlx.DB (until refactored to use pgx directly)
-func NewConsumerExt(db *sqlx.DB, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
+func NewConsumer(db *pgxpool.Pool, queueName string, handler MessageHandler, opts ...ConsumerOption) (*Consumer, error) {
 	config := defaultConsumerConfig
 	for _, opt := range opts {
 		opt(&config)
@@ -364,7 +360,7 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 
 	qb.WriteString(`UPDATE `)
 	qb.WriteString(pg.QuoteIdentifier(c.queueName))
-	qb.WriteString(` SET locked_until = :locked_until`)
+	qb.WriteString(` SET locked_until = @locked_until`)
 	qb.WriteString(`, started_at = CURRENT_TIMESTAMP`)
 	qb.WriteString(`, consumed_count = consumed_count+1`)
 	qb.WriteString(` WHERE id IN (`)
@@ -373,12 +369,12 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 		qb.WriteString(pg.QuoteIdentifier(c.queueName))
 		qb.WriteString(` WHERE`)
 		if c.cfg.HistoryLimit > 0 {
-			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - CAST((:history_limit) AS interval) AND`)
+			qb.WriteString(` created_at >= CURRENT_TIMESTAMP - CAST((@history_limit) AS interval) AND`)
 			qb.WriteString(` created_at < CURRENT_TIMESTAMP AND`)
 		}
 		qb.WriteString(` (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)`)
 		if c.cfg.MaxConsumeCount > 0 {
-			qb.WriteString(` AND consumed_count < :max_consume_count`)
+			qb.WriteString(` AND consumed_count < @max_consume_count`)
 		}
 
 		for i, filter := range c.cfg.MetadataFilters {
@@ -386,14 +382,14 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 				return nil, fatalError{Err: fmt.Errorf("metadata filter operation is empty")}
 			}
 
-			qb.WriteString(fmt.Sprintf(" AND metadata->>:metadata_key_%d %s :metadata_value_%d", i, filter.Operation, i))
+			qb.WriteString(fmt.Sprintf(" AND metadata->>@metadata_key_%d %s @metadata_value_%d", i, filter.Operation, i))
 		}
 
 		qb.WriteString(` AND processed_at IS NULL`)
 		qb.WriteString(` AND (scheduled_for IS NULL OR scheduled_for < CURRENT_TIMESTAMP)`)
 		// prioritize scheduled messages and messages with lower consumed_count
 		qb.WriteString(` ORDER BY scheduled_for ASC NULLS LAST, consumed_count ASC, created_at ASC`)
-		qb.WriteString(` LIMIT :limit`)
+		qb.WriteString(` LIMIT @limit`)
 		qb.WriteString(` FOR UPDATE SKIP LOCKED`)
 	}
 	qb.WriteString(`) RETURNING id, payload, metadata, consumed_count, locked_until`)
@@ -480,7 +476,7 @@ func (c *Consumer) consumeMessages(ctx context.Context, query *query.Builder) ([
 		msgs, err := c.tryConsumeMessages(ctx, query, maxMsg)
 		if err != nil {
 			c.sem.Release(maxMsg)
-			if !errors.Is(err, sql.ErrNoRows) {
+			if !errors.Is(err, pgx.ErrNoRows) {
 				return nil, errors.WithStack(err)
 			}
 			select {
@@ -505,14 +501,14 @@ type pgMessage struct {
 }
 
 func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder, limit int64) (_ []*MessageIncoming, err error) {
-	tx, err := c.db.BeginTxx(ctx, nil)
+	tx, err := c.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		// TODO not necessary fatal, network could wiggle.
 		return nil, fatalError{Err: errors.WithStack(err)}
 	}
 	defer func() {
-		txRollbackErr := tx.Rollback()
-		if errors.Is(txRollbackErr, sql.ErrTxDone) {
+		txRollbackErr := tx.Rollback(ctx)
+		if errors.Is(txRollbackErr, pgx.ErrTxClosed) {
 			return
 		}
 		if txRollbackErr != nil {
@@ -525,7 +521,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 	}()
 
 	lockedUntil := time.Now().Add(c.cfg.LockDuration)
-	namedParams := map[string]interface{}{
+	namedParams := pgx.NamedArgs{
 		"locked_until": lockedUntil,
 		"limit":        limit,
 	}
@@ -552,7 +548,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 		return nil, errors.WithStack(err)
 	}
 
-	rows, err := sqlx.NamedQueryContext(ctx, tx, queryString, namedParams)
+	rows, err := tx.Query(ctx, queryString, namedParams)
 	if err != nil {
 		if isErrorCode(err, undefinedColumnErrCode) {
 			return nil, fatalError{Err: err}
@@ -573,15 +569,15 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 		return nil, errors.WithStack(err)
 	}
 	if len(msgs) == 0 {
-		return nil, sql.ErrNoRows
+		return nil, pgx.ErrNoRows
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, errors.Wrap(err, "commit message consumption")
 	}
 	return msgs, nil
 }
 
-func (c *Consumer) parseRow(ctx context.Context, rows *sqlx.Rows) (*MessageIncoming, error) {
+func (c *Consumer) parseRow(ctx context.Context, rows pgx.Rows) (*MessageIncoming, error) {
 	var pgMsg pgMessage
 	if err := rows.Scan(
 		&pgMsg.ID,
@@ -695,13 +691,13 @@ func isJSONObject(b json.RawMessage) bool {
 }
 
 type execer interface {
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error)
 }
 
 func (c *Consumer) ackMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context) error {
 	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP WHERE id = $1`
 	return func(ctx context.Context) error {
-		if _, err := exec.ExecContext(ctx, query, msgID); err != nil {
+		if _, err := exec.Exec(ctx, query, msgID); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
 				metric.WithAttributes(
 					attribute.String("resolution", "ack"),
@@ -723,7 +719,7 @@ func (c *Consumer) ackMessage(exec execer, msgID pgtype.UUID) func(ctx context.C
 func (c *Consumer) nackMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context, reason string) error {
 	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, error_detail = $2 WHERE id = $1`
 	return func(ctx context.Context, reason string) error {
-		if _, err := exec.ExecContext(ctx, query, msgID, reason); err != nil {
+		if _, err := exec.Exec(ctx, query, msgID, reason); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
 				metric.WithAttributes(
 					attribute.String("resolution", "nack"),
@@ -745,7 +741,7 @@ func (c *Consumer) nackMessage(exec execer, msgID pgtype.UUID) func(ctx context.
 func (c *Consumer) discardMessage(exec execer, msgID pgtype.UUID) func(ctx context.Context, reason string) error {
 	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = NULL, processed_at = CURRENT_TIMESTAMP, error_detail = $2 WHERE id = $1`
 	return func(ctx context.Context, reason string) error {
-		if _, err := exec.ExecContext(ctx, query, msgID, reason); err != nil {
+		if _, err := exec.Exec(ctx, query, msgID, reason); err != nil {
 			c.metrics.failedProcessingCounter.Add(ctx, 1,
 				metric.WithAttributes(
 					attribute.String("resolution", "discard"),

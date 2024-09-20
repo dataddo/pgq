@@ -2,11 +2,11 @@ package pgq_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.dataddo.com/pgq"
 )
 
@@ -15,11 +15,15 @@ type PayloadStruct struct {
 }
 
 func ExamplePublisher() {
-	db, err := sql.Open("postgres", "user=postgres password=postgres host=localhost port=5432 dbname=postgres")
+	config, err := pgxpool.ParseConfig("user=postgres password=postgres host=localhost port=5432 dbname=postgres")
+	if err != nil {
+		log.Fatal("Error parsing pgxpool configuration:", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		log.Fatal("Error opening database:", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 	const queueName = "test_queue"
 	p := pgq.NewPublisher(db)
 	payload, _ := json.Marshal(PayloadStruct{Foo: "bar"})

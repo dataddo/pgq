@@ -6,14 +6,14 @@ import (
 	"strings"
 )
 
-// Builder is a helper for building SQL queries with named parameters (jmoiron/sqlx and psql style for the moment)
+// Builder is a helper for building SQL queries with named parameters (jackc/pgx/v5 style for the moment)
 type Builder struct {
 	query  strings.Builder
 	params []string
 }
 
 var (
-	tagRe = regexp.MustCompile(`:{1,2}(\w+)`)
+	tagRe = regexp.MustCompile(`@{1,2}(\w+)`)
 )
 
 func NewBuilder() *Builder {
