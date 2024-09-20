@@ -3,7 +3,7 @@ package pgq
 import (
 	"context"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 )
 
@@ -52,7 +52,7 @@ var mandatoryIndexes = []string{
 }
 
 // ValidateFields checks if required fields exist
-func ValidateFields(ctx context.Context, db *sqlx.DB, queueName string) error {
+func ValidateFields(ctx context.Context, db *pgxpool.Pool, queueName string) error {
 	// --- (1) ----
 	// Recover the columns that the queue has
 	columns, err := getColumnData(ctx, db, queueName)
@@ -88,7 +88,7 @@ func ValidateFields(ctx context.Context, db *sqlx.DB, queueName string) error {
 }
 
 // ValidateIndexes checks if required indexes exist
-func ValidateIndexes(ctx context.Context, db *sqlx.DB, queueName string) error {
+func ValidateIndexes(ctx context.Context, db *pgxpool.Pool, queueName string) error {
 	found, err := checkIndexData(ctx, db, queueName)
 	if err != nil {
 		return err
@@ -101,12 +101,12 @@ func ValidateIndexes(ctx context.Context, db *sqlx.DB, queueName string) error {
 	return nil
 }
 
-func getColumnData(ctx context.Context, db *sqlx.DB, queueName string) (map[string]struct{}, error) {
-	rows, err := db.QueryContext(ctx, columnSelect, queueName)
+func getColumnData(ctx context.Context, db *pgxpool.Pool, queueName string) (map[string]struct{}, error) {
+	rows, err := db.Query(ctx, columnSelect, queueName)
 	if err != nil {
 		return nil, errors.Wrap(err, "querying schema of queue table")
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() { rows.Close() }()
 
 	columns := make(map[string]struct{})
 	for rows.Next() {
@@ -122,12 +122,12 @@ func getColumnData(ctx context.Context, db *sqlx.DB, queueName string) (map[stri
 	return columns, nil
 }
 
-func checkIndexData(ctx context.Context, db *sqlx.DB, queueName string) (bool, error) {
-	rows, err := db.QueryContext(ctx, indexSelect, queueName, mandatoryIndexes)
+func checkIndexData(ctx context.Context, db *pgxpool.Pool, queueName string) (bool, error) {
+	rows, err := db.Query(ctx, indexSelect, queueName, mandatoryIndexes)
 	if err != nil {
 		return false, errors.Wrap(err, "querying index schema of queue table")
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() { rows.Close() }()
 
 	var allMandatoryColumnsAreIndexed bool
 	for rows.Next() {
@@ -138,8 +138,6 @@ func checkIndexData(ctx context.Context, db *sqlx.DB, queueName string) (bool, e
 	if err := rows.Err(); err != nil {
 		return false, errors.Wrap(err, "reading index schema of queue table")
 	}
-	if err := rows.Close(); err != nil {
-		return false, errors.Wrap(err, "closing index schema query of queue table")
-	}
+	rows.Close()
 	return allMandatoryColumnsAreIndexed, nil
 }

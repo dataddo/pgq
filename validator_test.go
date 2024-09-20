@@ -11,8 +11,7 @@ import (
 	"go.dataddo.com/pgq/internal/pg"
 	"go.dataddo.com/pgq/internal/require"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
@@ -22,12 +21,12 @@ func TestValidator_ValidateFieldsCorrectSchema(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 
 	// Create the new queue
-	_, err := db.ExecContext(ctx, generateCreateTableQuery(queueName))
+	_, err := db.Exec(ctx, generateCreateTableQuery(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -45,12 +44,12 @@ func TestValidator_ValidateFieldsCorrectSchemaPartitionedTable(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 
 	// Create the new queue
-	_, err := db.ExecContext(ctx, generateCreateTablePartitionedQuery(queueName))
+	_, err := db.Exec(ctx, generateCreateTablePartitionedQuery(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -68,11 +67,11 @@ func TestValidator_ValidateFieldsIncorrectSchema(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 	// Create the new incorrect queue
-	_, err := db.ExecContext(ctx, generateInvalidQueueQuery(queueName))
+	_, err := db.Exec(ctx, generateInvalidQueueQuery(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -90,12 +89,12 @@ func TestValidator_ValidateIndexesCorrectSchema(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 
 	// Create the new queue
-	_, err := db.ExecContext(ctx, generateCreateTableQuery(queueName))
+	_, err := db.Exec(ctx, generateCreateTableQuery(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -113,11 +112,11 @@ func TestValidator_ValidateIndexesCorrectSchema_CompositeIndexes(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 	// Create the new queue
-	_, err := db.ExecContext(ctx, generateCreateTableQueryCompositeIndex(queueName))
+	_, err := db.Exec(ctx, generateCreateTableQueryCompositeIndex(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -135,11 +134,11 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 	db := openDB(t)
 	queueName := fmt.Sprintf("TestQueue_%s", generateRandomString(10))
 	t.Cleanup(func() {
-		_, err := db.ExecContext(ctx, generateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, generateDropTableQuery(queueName))
 		require.NoError(t, err)
 	})
 	// Create the new incorrect queue
-	_, err := db.ExecContext(ctx, generateInvalidQueueQuery(queueName))
+	_, err := db.Exec(ctx, generateInvalidQueueQuery(queueName))
 	require.NoError(t, err)
 
 	// --- (2) ----
@@ -152,23 +151,24 @@ func TestValidator_ValidateIndexesIncorrectSchema(t *testing.T) {
 
 // TODO: This was recovered from the consumer_test.go file. We can make a common testing package and add all these common
 // functionalities will be included
-func openDB(t *testing.T) *sqlx.DB {
+func openDB(t *testing.T) *pgxpool.Pool {
 	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
 	if !ok {
 		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
 	}
-	db, err := sqlx.Open("pgx", dsn)
+	config, err := pgxpool.ParseConfig(dsn)
+	require.NoError(t, err)
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	ensureUUIDExtension(t, db)
 	return db
 }
 
-func ensureUUIDExtension(t *testing.T, db *sqlx.DB) {
-	_, err := db.Exec(`
+func ensureUUIDExtension(t *testing.T, db *pgxpool.Pool) {
+	_, err := db.Exec(context.Background(), `
 		DO $$ 
 		BEGIN
 		  IF current_setting('server_version_num')::int < 130000 THEN

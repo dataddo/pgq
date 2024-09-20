@@ -105,11 +105,10 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go.dataddo.com/pgq"
 )
@@ -117,9 +116,10 @@ import (
 func main() {
 	postgresDSN := "your_postgres_dsn"
 	queueName := "your_queue_name"
+	ctx := context.Background()
 
 	// create a new postgres connection 
-	db, err := sql.Open("pgx", postgresDSN)
+	db, err := pgxpool.New(ctx, postgresDSN)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -187,19 +187,19 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.dataddo.com/pgq"
-	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
 func main() {
 	postgresDSN := "your_postgres_dsn"
 	queueName := "your_queue_name"
+	ctx := context.Background()
 
-	// create a new postgres connection and publisher 
-	db, err := sql.Open("pgx", postgresDSN)
+	// create a new postgres connection and publisher
+	db, err := pgxpool.New(ctx, postgresDSN)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -219,7 +219,8 @@ func main() {
 }
 
 // we must specify the message handler, which implements simple interface
-type handler struct {}
+type handler struct{}
+
 func (h *handler) HandleMessage(_ context.Context, msg *pgq.MessageIncoming) (processed bool, err error) {
 	fmt.Println("Message payload:", string(msg.Payload))
 	return true, nil
