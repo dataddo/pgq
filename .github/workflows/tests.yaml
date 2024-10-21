@@ -24,7 +24,7 @@ jobs:
         # version must be string, otherwise it will be converted to float
         # and the trailing zero will be removed. 1.20 -> 1.2
         go-version: [ "1.22", "1.23" ]
-        postgres-version: [ 17, 16, 15, 14, 13, 12, 11 ]
+        postgres-version: [ 17, 16, 15, 14, 13, 12 ]
     # Ensure that all combinations of Go and Postgres versions will run
     continue-on-error: true
 
@@ -57,11 +57,11 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Setting up Go in the runner
       - name: setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
