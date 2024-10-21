@@ -2,16 +2,16 @@ package pgq_test
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.dataddo.com/pgq"
 	"go.opentelemetry.io/otel/metric/noop"
 )
 
-var db *sql.DB
+var db *pgxpool.Pool
 
 func ExampleNewConsumer() {
 	slogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))

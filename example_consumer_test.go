@@ -2,7 +2,6 @@ package pgq_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.dataddo.com/pgq"
 )
 
@@ -48,7 +48,11 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *pgq.MessageIncoming) (
 }
 
 func ExampleConsumer() {
-	db, err := sql.Open("postgres", "user=postgres password=postgres host=localhost port=5432 dbname=postgres")
+	config, err := pgxpool.ParseConfig("user=postgres password=postgres host=localhost port=5432 dbname=postgres")
+	if err != nil {
+		log.Fatal("Error parsing database config:", err)
+	}
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		log.Fatal("Error opening database:", err)
 	}

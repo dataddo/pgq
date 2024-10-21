@@ -13,27 +13,27 @@ func TestGetTags(t *testing.T) {
 	}{
 		{
 			name:     "Single Tag",
-			line:     "Here's a tag:tagName",
+			line:     "Here's a tag@tagName",
 			expected: []string{"tagName"},
 		},
 		{
 			name:     "Multiple Tags No Spaces",
-			line:     "Multiple :tag1:tag2:tag3",
+			line:     "Multiple @tag1@tag2@tag3",
 			expected: []string{"tag1", "tag2", "tag3"},
 		},
 		{
 			name:     "Invalid Tag With Space",
-			line:     "This should not be a tag: tagWithSpace",
+			line:     "This should not be a tag@ tagWithSpace",
 			expected: nil, // ": tagWithSpace" is not valid due to the space
 		},
 		{
 			name:     "Tags With Mixed Characters",
-			line:     "Tags with numbers  :tag123 and underscores:tag_name",
+			line:     "Tags with numbers  @tag123 and underscores@tag_name",
 			expected: []string{"tag123", "tag_name"},
 		},
 		{
 			name:     "Mixed Valid and Invalid Tags",
-			line:     "Valid:tag1 and invalid: tag2",
+			line:     "Valid@tag1 and invalid@ tag2",
 			expected: []string{"tag1"},
 		},
 	}

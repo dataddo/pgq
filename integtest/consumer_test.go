@@ -2,7 +2,6 @@ package integtest
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/metric/noop"
 
 	. "go.dataddo.com/pgq"
@@ -27,14 +27,13 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 
 	db := openDB(t)
 	queueName := t.Name()
-	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
-	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	_, _ = db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.Exec(ctx, schema.GenerateCreateTableQuery(queueName))
 	t.Cleanup(func() {
 		db := openDB(t)
-		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
 		require.NoError(t, err)
-		err = db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
@@ -65,8 +64,7 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	err = consumer.Run(consumeCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	err = db.Close()
-	require.NoError(t, err)
+	db.Close()
 
 	// evaluate
 	query := fmt.Sprintf(
@@ -75,17 +73,16 @@ func TestConsumer_Run_graceful_shutdown(t *testing.T) {
 	)
 	db = openDB(t)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
-	row := db.QueryRowContext(ctx, query, msgID)
+	row := db.QueryRow(ctx, query, msgID)
 	var (
-		lockedUntil    sql.NullTime
+		lockedUntil    pgtype.Timestamptz
 		processedCount int
 	)
 	err = row.Scan(&lockedUntil, &processedCount)
 	require.NoError(t, err)
-	require.Equal(t, false, lockedUntil.Valid)
+	require.Equal(t, pgtype.Null, lockedUntil.Status)
 	require.Equal(t, 1, processedCount)
 }
 
@@ -97,14 +94,13 @@ func TestConsumer_Run_FutureMessage(t *testing.T) {
 
 	db := openDB(t)
 	queueName := t.Name()
-	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
-	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	_, _ = db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.Exec(ctx, schema.GenerateCreateTableQuery(queueName))
 	t.Cleanup(func() {
 		db := openDB(t)
-		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
 		require.NoError(t, err)
-		err = db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
@@ -144,8 +140,7 @@ func TestConsumer_Run_FutureMessage(t *testing.T) {
 	err = consumer.Run(consumeCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	err = db.Close()
-	require.NoError(t, err)
+	db.Close()
 
 	// evaluate
 	query := fmt.Sprintf(
@@ -154,10 +149,9 @@ func TestConsumer_Run_FutureMessage(t *testing.T) {
 	)
 	db = openDB(t)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
-	row := db.QueryRowContext(ctx, query)
+	row := db.QueryRow(ctx, query)
 	var (
 		msgCount int
 	)
@@ -175,14 +169,13 @@ func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
 
 	db := openDB(t)
 	queueName := t.Name()
-	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
-	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	_, _ = db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.Exec(ctx, schema.GenerateCreateTableQuery(queueName))
 	t.Cleanup(func() {
 		db := openDB(t)
-		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
 		require.NoError(t, err)
-		err = db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
@@ -221,8 +214,7 @@ func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
 	err = consumer.Run(consumeCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	err = db.Close()
-	require.NoError(t, err)
+	db.Close()
 
 	// evaluate
 	query := fmt.Sprintf(
@@ -231,10 +223,9 @@ func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
 	)
 	db = openDB(t)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
-	row := db.QueryRowContext(ctx, query)
+	row := db.QueryRow(ctx, query)
 	var (
 		msgCount int
 	)
@@ -252,14 +243,13 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 
 	db := openDB(t)
 	queueName := t.Name()
-	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
-	_, err := db.ExecContext(ctx, schema.GenerateCreateTableQuery(queueName))
+	_, _ = db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.Exec(ctx, schema.GenerateCreateTableQuery(queueName))
 	t.Cleanup(func() {
 		db := openDB(t)
-		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		_, err := db.Exec(ctx, schema.GenerateDropTableQuery(queueName))
 		require.NoError(t, err)
-		err = db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	require.NoError(t, err)
 	publisher := NewPublisher(db)
@@ -298,8 +288,7 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 	err = consumer.Run(consumeCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	err = db.Close()
-	require.NoError(t, err)
+	db.Close()
 
 	// evaluate
 	query := fmt.Sprintf(
@@ -308,10 +297,9 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 	)
 	db = openDB(t)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
-	row := db.QueryRowContext(ctx, query)
+	row := db.QueryRow(ctx, query)
 	var (
 		msgCount int
 	)
@@ -321,23 +309,24 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 
 }
 
-func openDB(t *testing.T) *sql.DB {
+func openDB(t *testing.T) *pgxpool.Pool {
 	dsn, ok := os.LookupEnv("TEST_POSTGRES_DSN")
 	if !ok {
 		t.Skip("Skipping integration test, TEST_POSTGRES_DSN is not set")
 	}
-	db, err := sql.Open("pgx", dsn)
+	config, err := pgxpool.ParseConfig(dsn)
+	require.NoError(t, err)
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		err := db.Close()
-		require.NoError(t, err)
+		db.Close()
 	})
 	ensureUUIDExtension(t, db)
 	return db
 }
 
-func ensureUUIDExtension(t *testing.T, db *sql.DB) {
-	_, err := db.Exec(`
+func ensureUUIDExtension(t *testing.T, db *pgxpool.Pool) {
+	_, err := db.Exec(context.Background(), `
 		DO $$ 
 		BEGIN
 		  IF current_setting('server_version_num')::int < 130000 THEN
