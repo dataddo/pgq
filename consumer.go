@@ -415,8 +415,8 @@ func (c *Consumer) generateQuery() (*query.Builder, error) {
 }
 
 func (c *Consumer) handleMessage(ctx context.Context, msg *MessageIncoming) {
-	ctx, cancel := context.WithDeadline(ctx, msg.Deadline)
-	defer cancel()
+	ctx, msg.cancelCtx = context.WithDeadline(ctx, msg.Deadline)
+	defer msg.cancelCtx()
 
 	ctxTimeout, cancel := prepareCtxTimeout()
 	defer cancel()
@@ -656,11 +656,12 @@ func (c *Consumer) discardInvalidMsg(ctx context.Context, id pgtype.UUID, err er
 
 func (c *Consumer) finishParsing(pgMsg pgMessage) (*MessageIncoming, error) {
 	msg := &MessageIncoming{
-		id:        uuid.UUID(pgMsg.ID.Bytes),
-		once:      sync.Once{},
-		ackFn:     c.ackMessage(c.db, pgMsg.ID),
-		nackFn:    c.nackMessage(c.db, pgMsg.ID),
-		discardFn: c.discardMessage(c.db, pgMsg.ID),
+		id:                  uuid.UUID(pgMsg.ID.Bytes),
+		once:                sync.Once{},
+		ackFn:               c.ackMessage(c.db, pgMsg.ID),
+		nackFn:              c.nackMessage(c.db, pgMsg.ID),
+		discardFn:           c.discardMessage(c.db, pgMsg.ID),
+		updateLockedUntilFn: c.updateLockedUntil(c.db, pgMsg.ID),
 	}
 	var err error
 	msg.Payload, err = parsePayload(pgMsg)
@@ -777,6 +778,14 @@ func (c *Consumer) discardMessage(exec execer, msgID pgtype.UUID) func(ctx conte
 			),
 		)
 		return nil
+	}
+}
+
+func (c *Consumer) updateLockedUntil(db *sqlx.DB, id pgtype.UUID) func(context.Context, time.Time) error {
+	query := `UPDATE ` + pg.QuoteIdentifier(c.queueName) + ` SET locked_until = $2 WHERE id = $1`
+	return func(ctx context.Context, lockedUntil time.Time) error {
+		_, err := db.ExecContext(ctx, query, id, lockedUntil)
+		return errors.WithStack(err)
 	}
 }
 
