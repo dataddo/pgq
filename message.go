@@ -25,11 +25,13 @@ var (
 func init() {
 	var err error
 
-	// Count fields in MessageOutgoing struct. Used for dynamically building the queries
+	// Count fields in MessageOutgoing struct. Used for dynamically building the
+	// queries
 	t := reflect.TypeOf(MessageOutgoing{})
 	fieldCountPerMessageOutgoing = t.NumField()
 
-	// Get field names in MessageOutgoing struct. Used for dynamically building the queries
+	// Get field names in MessageOutgoing struct. Used for dynamically building the
+	// queries
 	dbFieldsPerMessageOutgoing, err = buildColumnListFromTags(MessageOutgoing{})
 	if err != nil {
 		panic(err)
@@ -50,8 +52,8 @@ func NewMessage(meta Metadata, payload json.RawMessage, attempt int, maxConsumed
 
 // MessageOutgoing is a record to be inserted into table queue in Postgres
 type MessageOutgoing struct {
-	// ScheduledFor is the time when the message should be processed. If nil, the messages
-	// gets processed immediately.
+	// ScheduledFor is the time when the message should be processed. If nil, the
+	// messages gets processed immediately.
 	ScheduledFor *time.Time `db:"scheduled_for"`
 	// Payload is the message's Payload.
 	Payload json.RawMessage `db:"payload"`
@@ -61,7 +63,7 @@ type MessageOutgoing struct {
 
 // MessageIncoming is a record retrieved from table queue in Postgres
 type MessageIncoming struct {
-	// id is an unique identifier of message
+	// id is a unique identifier of message
 	id uuid.UUID
 	// Metadata contains the message Metadata.
 	Metadata Metadata
@@ -72,15 +74,17 @@ type MessageIncoming struct {
 	Attempt int
 	// Deadline is the time when the message will be returned to the queue if not
 	// finished. It is set by the queue when the message is consumed.
-	Deadline time.Time
+	Deadline  time.Time
+	cancelCtx context.CancelFunc
 
 	maxConsumedCount uint
 	// once ensures that the message will be finished only once. It's easier than
 	// complicated SQL queries.
-	once      sync.Once
-	ackFn     func(ctx context.Context) error
-	nackFn    func(context.Context, string) error
-	discardFn func(context.Context, string) error
+	once                sync.Once
+	ackFn               func(ctx context.Context) error
+	nackFn              func(context.Context, string) error
+	discardFn           func(context.Context, string) error
+	updateLockedUntilFn func(context.Context, time.Time) error
 }
 
 // LastAttempt returns true if the message is consumed for the last time
@@ -94,8 +98,40 @@ func (m *MessageIncoming) LastAttempt() bool {
 	return m.Attempt >= int(m.maxConsumedCount)
 }
 
+// SetTimeout sets the message timeout. If the timeout is after the message
+// deadline, it returns ErrInvalidDeadline. The timeout also affects the queue
+// lock on the message. Be beware, that the default Deadline is calculated as:
+//
+//	LockedUntil - (AckTimeout + MessageProcessingReserveDuration)
+func (m *MessageIncoming) SetTimeout(ctx context.Context, timeout time.Duration) (context.Context, error) {
+	return m.SetDeadline(ctx, time.Now().Add(timeout))
+}
+
+// ErrInvalidDeadline is returned when the deadline is after the message deadline.
+var ErrInvalidDeadline = errors.New("deadline can't be prolonged")
+
+// SetDeadline sets the message deadline. If the deadline is after the message
+// deadline, it returns ErrInvalidDeadline. The timeout also affects the queue
+// lock on the message. Be beware, that the default Deadline is calculated as:
+//
+//	LockedUntil - (AckTimeout + MessageProcessingReserveDuration)
+func (m *MessageIncoming) SetDeadline(ctx context.Context, deadline time.Time) (context.Context, error) {
+	if deadline.After(m.Deadline) {
+		return nil, ErrInvalidDeadline
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	if err := m.updateLockedUntilFn(ctx, deadline); err != nil {
+		cancel()
+		return nil, errors.Wrap(err, "setting deadline in the database")
+	}
+	m.Deadline = deadline
+	m.cancelCtx = cancel
+	return ctx, nil
+}
+
 // errMessageAlreadyFinished is error that is returned if message is being
-// finished for second time. Example: when trying to ack after the nack has been already called.
+// finished for second time. Example: when trying to ack after the nack has been
+// already called.
 var errMessageAlreadyFinished = errors.New("message already finished")
 
 // ack positively acknowledges the message, and the message is marked as processed.
@@ -103,6 +139,7 @@ func (m *MessageIncoming) ack(ctx context.Context) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.ackFn(ctx)
+		m.cancelCtx()
 	})
 	return err
 }
@@ -113,6 +150,7 @@ func (m *MessageIncoming) nack(ctx context.Context, reason string) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.nackFn(ctx, reason)
+		m.cancelCtx()
 	})
 	return err
 }
@@ -123,12 +161,14 @@ func (m *MessageIncoming) discard(ctx context.Context, reason string) error {
 	err := errMessageAlreadyFinished
 	m.once.Do(func() {
 		err = m.discardFn(ctx, reason)
+		m.cancelCtx()
 	})
 	return err
 }
 
-// buildColumnListFromTags dynamically constructs a list of column names based on the `db` struct tags
-// of any given struct. It returns a slice of strings containing the column names.
+// buildColumnListFromTags dynamically constructs a list of column names based
+// on the `db` struct tags of any given struct. It returns a slice of strings
+// containing the column names.
 func buildColumnListFromTags(data interface{}) ([]string, error) {
 	// Ensure that 'data' is a struct
 	t := reflect.TypeOf(data)

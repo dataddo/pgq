@@ -1,7 +1,11 @@
 package pgq
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"go.dataddo.com/pgq/internal/require"
 )
 
 func TestMessageIncoming_LastAttempt(t *testing.T) {
@@ -57,4 +61,20 @@ func TestMessageIncoming_LastAttempt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMessageIncoming_SetDeadline(t *testing.T) {
+	m := &MessageIncoming{
+		Deadline: time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
+		updateLockedUntilFn: func(ctx context.Context, t time.Time) error {
+			return nil
+		},
+	}
+	ctx := context.Background()
+	ctx, err := m.SetDeadline(ctx, time.Now().Add(time.Second))
+	require.NoError(t, err)
+	ctx, err = m.SetDeadline(ctx, time.Now())
+	require.NoError(t, err)
+	ctx, err = m.SetDeadline(ctx, time.Now())
+	require.Error(t, err)
 }
