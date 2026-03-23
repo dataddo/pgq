@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jackc/pgtype"
+	"github.com/google/uuid"
 
 	"go.dataddo.com/pgq"
 	pgutils "go.dataddo.com/pgq/internal/pg"
@@ -21,8 +21,8 @@ func TestPublisher(t *testing.T) {
 	ctx := context.Background()
 
 	type want struct {
-		metadata pgtype.JSONB
-		payload  pgtype.JSONB
+		metadata string
+		payload  string
 	}
 	tests := []struct {
 		name          string
@@ -45,8 +45,8 @@ func TestPublisher(t *testing.T) {
 				),
 			},
 			want: want{
-				metadata: pgtype.JSONB{Bytes: []byte(`{"host": "localhost", "test": "test_value"}`), Status: pgtype.Present},
-				payload:  pgtype.JSONB{Bytes: []byte(`{"foo": "bar"}`), Status: pgtype.Present},
+				metadata: `{"host": "localhost", "test": "test_value"}`,
+				payload:  `{"foo": "bar"}`,
 			},
 			wantErr: false,
 		},
@@ -82,17 +82,15 @@ func TestPublisher(t *testing.T) {
 				msgIDs[0],
 			)
 			var (
-				id       pgtype.UUID
-				metadata pgtype.JSONB
-				payload  pgtype.JSONB
+				id       uuid.UUID
+				metadata []byte
+				payload  []byte
 			)
 			err = row.Scan(&id, &metadata, &payload)
 			require.NoError(t, err)
-			require.Equal(t, [16]byte(msgIDs[0]), id.Bytes)
-			require.Equal(t, tt.want.metadata.Status, metadata.Status)
-			require.Equal(t, string(tt.want.metadata.Bytes), string(metadata.Bytes))
-			require.Equal(t, tt.want.payload.Status, payload.Status)
-			require.Equal(t, string(tt.want.payload.Bytes), string(payload.Bytes))
+			require.Equal(t, msgIDs[0], id)
+			require.Equal(t, tt.want.metadata, string(metadata))
+			require.Equal(t, tt.want.payload, string(payload))
 		})
 	}
 }
