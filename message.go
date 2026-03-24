@@ -2,6 +2,7 @@ package pgq
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -15,6 +16,16 @@ import (
 
 // Metadata is message Metadata definition.
 type Metadata map[string]string
+
+// Value implements driver.Valuer to ensure nil Metadata is serialized as an
+// empty JSON object rather than NULL. This is required because pgx/v5 treats
+// nil maps as NULL, but the metadata column has a NOT NULL constraint.
+func (m Metadata) Value() (driver.Value, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(m)
+}
 
 var (
 	fieldCountPerMessageOutgoing int

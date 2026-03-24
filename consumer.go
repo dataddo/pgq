@@ -15,7 +15,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -514,8 +514,8 @@ func (c *Consumer) consumeMessages(ctx context.Context, query *query.Builder) ([
 
 type pgMessage struct {
 	ID          pgtype.UUID
-	Payload     pgtype.JSONB
-	Metadata    pgtype.JSONB
+	Payload     []byte
+	Metadata    []byte
 	Attempt     pgtype.Int4
 	LockedUntil pgtype.Timestamptz
 }
@@ -547,10 +547,7 @@ func (c *Consumer) tryConsumeMessages(ctx context.Context, query *query.Builder,
 	}
 
 	if query.HasParam("history_limit") {
-		var scanInterval pgtype.Interval
-		// time.Duration doesn't ever fail
-		_ = scanInterval.Set(c.cfg.HistoryLimit)
-
+		scanInterval := pgtype.Interval{Microseconds: c.cfg.HistoryLimit.Microseconds(), Valid: true}
 		namedParams["history_limit"] = scanInterval
 	}
 
@@ -617,8 +614,8 @@ func (c *Consumer) parseRow(ctx context.Context, rows *sqlx.Rows) (*MessageIncom
 		c.discardInvalidMsg(ctx, pgMsg.ID, err)
 		go c.cfg.InvalidMessageCallback(ctx, InvalidMessage{
 			ID:       uuid.UUID(pgMsg.ID.Bytes).String(),
-			Metadata: pgMsg.Metadata.Bytes,
-			Payload:  pgMsg.Payload.Bytes,
+			Metadata: pgMsg.Metadata,
+			Payload:  pgMsg.Payload,
 		}, err)
 		return nil, errors.WithStack(err)
 	}
@@ -628,12 +625,12 @@ func (c *Consumer) parseRow(ctx context.Context, rows *sqlx.Rows) (*MessageIncom
 func (c *Consumer) logFields(msg pgMessage, err error) []any {
 	entry := []any{
 		"msg.id", uuid.UUID(msg.ID.Bytes).String(),
-		"msg.metadata", json.RawMessage(msg.Metadata.Bytes),
+		"msg.metadata", json.RawMessage(msg.Metadata),
 	}
 	if err != nil {
 		entry = append(entry, []any{
 			"error", err,
-			"msg.payload", json.RawMessage(msg.Payload.Bytes),
+			"msg.payload", json.RawMessage(msg.Payload),
 		})
 	}
 	return entry
@@ -672,29 +669,29 @@ func (c *Consumer) finishParsing(pgMsg pgMessage) (*MessageIncoming, error) {
 	if err != nil {
 		return msg, errors.Wrap(err, "parsing metadata")
 	}
-	msg.Attempt = int(pgMsg.Attempt.Int)
+	msg.Attempt = int(pgMsg.Attempt.Int32)
 	msg.maxConsumedCount = c.cfg.MaxConsumeCount
 	msg.Deadline = pgMsg.LockedUntil.Time.Add(-c.cfg.AckTimeout).Add(-c.cfg.MessageProcessingReserveDuration)
 	return msg, nil
 }
 
 func parsePayload(pgMsg pgMessage) (json.RawMessage, error) {
-	if pgMsg.Payload.Status != pgtype.Present {
+	if pgMsg.Payload == nil {
 		return nil, errors.New("missing message payload")
 	}
-	if !isJSONObject(pgMsg.Payload.Bytes) {
+	if !isJSONObject(pgMsg.Payload) {
 		return nil, errors.New("payload is invalid JSON object")
 	}
-	return pgMsg.Payload.Bytes, nil
+	return pgMsg.Payload, nil
 }
 
 func parseMetadata(pgMsg pgMessage) (map[string]string, error) {
-	if pgMsg.Metadata.Status != pgtype.Present {
+	if pgMsg.Metadata == nil {
 		return map[string]string{}, nil
 	}
 	var m map[string]string
-	if err := json.Unmarshal(pgMsg.Metadata.Bytes, &m); err != nil {
-		if !isJSONObject(pgMsg.Metadata.Bytes) {
+	if err := json.Unmarshal(pgMsg.Metadata, &m); err != nil {
+		if !isJSONObject(pgMsg.Metadata) {
 			return nil, errors.New("metadata is invalid JSON object")
 		}
 		return nil, errors.Wrap(err, "parsing metadata")

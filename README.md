@@ -109,7 +109,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.dataddo.com/pgq"
 )
@@ -191,7 +191,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go.dataddo.com/pgq"
-	_ "github.com/jackc/pgx/v4/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
@@ -408,7 +408,7 @@ The unit tests will run without any additional setup, but the integration tests 
 
 In one shell start the postgres docker container:
 ```shell
-docker run --rm -it -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15-alpine
+docker run --rm -it -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
 ```
 
 In another shell run the tests:
