@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,13 +160,10 @@ func TestConsumer_Run_FutureMessage(t *testing.T) {
 		require.NoError(t, err)
 	})
 	row := db.QueryRowContext(ctx, query)
-	var (
-		msgCount int
-	)
+	var msgCount int
 	err = row.Scan(&msgCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, msgCount)
-
 }
 
 func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
@@ -235,13 +234,10 @@ func TestConsumer_Run_MetadataFilter_Equal(t *testing.T) {
 		require.NoError(t, err)
 	})
 	row := db.QueryRowContext(ctx, query)
-	var (
-		msgCount int
-	)
+	var msgCount int
 	err = row.Scan(&msgCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, msgCount)
-
 }
 
 func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
@@ -312,13 +308,94 @@ func TestConsumer_Run_MetadataFilter_NotEqual(t *testing.T) {
 		require.NoError(t, err)
 	})
 	row := db.QueryRowContext(ctx, query)
-	var (
-		msgCount int
-	)
+	var msgCount int
 	err = row.Scan(&msgCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, msgCount)
+}
 
+func TestConsumer_Run_ShouldSkipTableVerificationWhenOptionIsSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+
+	db := openDB(t)
+	queueName := t.Name()
+	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.ExecContext(ctx, generateCreateTableWithoutIndexesQuery(queueName))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db := openDB(t)
+		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		require.NoError(t, err)
+		err = db.Close()
+		require.NoError(t, err)
+	})
+
+	consumer, err := NewConsumer(db, queueName, &regularHandler{},
+		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithoutTableVerification(),
+		WithStopOnEmptyQueue(true),
+	)
+	require.NoError(t, err)
+
+	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer consumeCancel()
+	err = consumer.Run(consumeCtx)
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestConsumer_Run_ShouldFailTableVerificationWithoutOption(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+
+	db := openDB(t)
+	queueName := t.Name()
+	_, _ = db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+	_, err := db.ExecContext(ctx, generateCreateTableWithoutIndexesQuery(queueName))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db := openDB(t)
+		_, err := db.ExecContext(ctx, schema.GenerateDropTableQuery(queueName))
+		require.NoError(t, err)
+		err = db.Close()
+		require.NoError(t, err)
+	})
+
+	consumer, err := NewConsumer(db, queueName, &regularHandler{},
+		WithLogger(slog.New(slog.NewTextHandler(&tbWriter{tb: t}, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+		WithStopOnEmptyQueue(true),
+	)
+	require.NoError(t, err)
+
+	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer consumeCancel()
+	err = consumer.Run(consumeCtx)
+	require.Error(t, err)
+	if !strings.Contains(err.Error(), "some PGQ indexes are missing or invalid") {
+		t.Fatalf("expected index validation error, got: %v", err)
+	}
+}
+
+// generateCreateTableWithoutIndexesQuery returns the queue table DDL without
+// the mandatory created_at/processed_at indexes, so table verification fails.
+func generateCreateTableWithoutIndexesQuery(queueName string) string {
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s
+	(
+		id             UUID        DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+		created_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+		started_at     TIMESTAMPTZ                           NULL,
+		locked_until   TIMESTAMPTZ                           NULL,
+		scheduled_for  TIMESTAMPTZ                           NULL,
+		processed_at   TIMESTAMPTZ                           NULL,
+		consumed_count INTEGER     DEFAULT 0                 NOT NULL,
+		error_detail   TEXT                                  NULL,
+		payload        JSONB                                 NOT NULL,
+		metadata       JSONB                                 NOT NULL
+	)`, pg.QuoteIdentifier(queueName))
 }
 
 func openDB(t *testing.T) *sql.DB {
