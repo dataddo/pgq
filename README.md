@@ -240,6 +240,7 @@ You can configure the consumer by passing the optional `ConsumeOptions` when cre
 | WithHistoryLimit         | how far in the history you want to search for messages in the queue. Sometimes you want to ignore messages created days ago even though the are unprocessed.                                                                                                                            |
 | WithMetrics         | No problem to attach your own metrics provider (prometheus, ...) here.                                                                                                                                                                                                                  |
 | WithMetadataFilter  | Allows to filter consumed message. At this point OpEqual and OpNotEqual are supported              |
+| WithoutTableVerification  | Skips the queue table columns/indexes validation on `Run`. Use only when you are certain the table schema is correct: missing mandatory indexes degrade polling to sequential (full-table) scans. Intended as an emergency escape hatch, not for regular use.              |
 
 ```go
 consumer, err := NewConsumer(db, queueName, handler,

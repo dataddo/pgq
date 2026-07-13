@@ -105,6 +105,12 @@ type consumerConfig struct {
 	// FiniteConsumption, when true it runs until no messages can be consumed
 	FiniteConsumption bool
 
+	// SkipTableVerification disables the mandatory columns/indexes check
+	// performed at the start of Run. Intended as an emergency escape hatch
+	// (e.g. false-positive index detection); consuming from a queue without
+	// the mandatory indexes degrades polling to sequential scans.
+	SkipTableVerification bool
+
 	Logger *slog.Logger
 }
 
@@ -233,6 +239,15 @@ func WithStopOnEmptyQueue(finiteConsumption bool) ConsumerOption {
 	}
 }
 
+// WithoutTableVerification skips the queue table columns/indexes validation
+// on Run. Use only when you are certain the table schema is correct;
+// missing mandatory indexes cause full-table scans while polling.
+func WithoutTableVerification() ConsumerOption {
+	return func(c *consumerConfig) {
+		c.SkipTableVerification = true
+	}
+}
+
 // MetadataFilter is a filter for metadata. Right now support only direct matching of key/value
 type (
 	MetadataOperation string
@@ -319,7 +334,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 	c.cfg.Logger.InfoContext(ctx, "starting consumption...",
 		"inputQueue", c.queueName,
 	)
-	if err := c.verifyTable(ctx); err != nil {
+	if c.cfg.SkipTableVerification {
+		c.cfg.Logger.WarnContext(ctx, "pgq: table verification skipped",
+			"inputQueue", c.queueName,
+		)
+	} else if err := c.verifyTable(ctx); err != nil {
 		return errors.Wrap(err, "verifying table")
 	}
 	query, err := c.generateQuery()
